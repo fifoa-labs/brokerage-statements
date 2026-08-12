@@ -23,8 +23,8 @@ formats, ambiguous processor matches, unknown financial activity, and
 unresolved security identities fail explicitly rather than being silently
 ignored or guessed.
 
-Initial brokerage support is focused on TD Ameritrade and Charles Schwab
-statements.
+Initial brokerage support is being developed for TD Ameritrade and Charles
+Schwab statements.
 
 It intentionally focuses on statement processing and normalization. It is not
 a portfolio manager, brokerage API, trading system, tax engine, or
@@ -33,6 +33,17 @@ Beancount-specific importer.
 * **PyPI:** https://pypi.org/project/brokerage-statements/
 * **Source:** https://github.com/fifoa-labs/brokerage-statements
 * **License:** MIT
+
+## Design Goals
+
+* Deterministic parsing and processor selection
+* Strict failure instead of silent guessing or skipped activity
+* Broker-neutral normalized domain objects
+* Exact decimal arithmetic for financial values and quantities
+* Traceable source evidence for normalized results
+* Isolated processors for distinct statement formats and revisions
+* Regression-safe support for new statement variants
+* Small, stable public APIs
 
 ## Installation
 
