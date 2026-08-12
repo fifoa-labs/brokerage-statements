@@ -23,12 +23,15 @@ from brokerage_statements.domain import (
     OptionExpirationEvent,
     OptionRight,
     OptionSecurity,
+    PositionEffect,
+    SecurityTransferDirection,
     SecurityTransferEvent,
     SourceEvidence,
     StatementSource,
     SymbolSecurity,
     TradeEvent,
     TradeSide,
+    TradeStatus,
 )
 
 
@@ -60,19 +63,45 @@ def test_trade_event_preserves_values(
         date=date(2026, 1, 15),
         security=security,
         side=TradeSide.BUY,
+        status=TradeStatus.SETTLED,
         quantity=Decimal("10"),
         price=Decimal("200.50"),
         amount=Decimal("2005.00"),
-        evidence=evidence,
+        evidence=(evidence,),
+        settlement_date=date(2026, 1, 17),
+        position_effect=PositionEffect.OPEN,
     )
 
     assert event.date == date(2026, 1, 15)
     assert event.security is security
     assert event.side is TradeSide.BUY
+    assert event.status is TradeStatus.SETTLED
     assert event.quantity == Decimal("10")
     assert event.price == Decimal("200.50")
     assert event.amount == Decimal("2005.00")
-    assert event.evidence is evidence
+    assert event.evidence == (evidence,)
+    assert event.settlement_date == date(2026, 1, 17)
+    assert event.position_effect is PositionEffect.OPEN
+
+
+def test_trade_event_allows_optional_trade_metadata(
+    evidence: SourceEvidence,
+) -> None:
+    """Trade metadata may omit settlement and position effect."""
+    event = TradeEvent(
+        date=date(2026, 1, 15),
+        security=SymbolSecurity("AAPL"),
+        side=TradeSide.SELL,
+        status=TradeStatus.PENDING,
+        quantity=Decimal("1"),
+        price=Decimal("10"),
+        amount=Decimal("10"),
+        evidence=(evidence,),
+    )
+
+    assert event.status is TradeStatus.PENDING
+    assert event.settlement_date is None
+    assert event.position_effect is None
 
 
 @pytest.mark.parametrize(
@@ -95,10 +124,11 @@ def test_trade_event_rejects_non_positive_quantity(
             date=date(2026, 1, 15),
             security=SymbolSecurity("AAPL"),
             side=TradeSide.BUY,
+            status=TradeStatus.SETTLED,
             quantity=quantity,
             price=Decimal("10"),
             amount=Decimal("10"),
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -141,10 +171,11 @@ def test_trade_event_rejects_non_finite_values(
             date=date(2026, 1, 15),
             security=SymbolSecurity("AAPL"),
             side=TradeSide.SELL,
+            status=TradeStatus.SETTLED,
             quantity=values["quantity"],
             price=values["price"],
             amount=values["amount"],
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -160,10 +191,11 @@ def test_trade_event_rejects_negative_price(
             date=date(2026, 1, 15),
             security=SymbolSecurity("AAPL"),
             side=TradeSide.BUY,
+            status=TradeStatus.SETTLED,
             quantity=Decimal("1"),
             price=Decimal("-1"),
             amount=Decimal("1"),
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -175,12 +207,12 @@ def test_cash_transfer_event_preserves_values(
         date=date(2026, 1, 10),
         transfer_type=CashTransferType.DEPOSIT,
         amount=Decimal("1000"),
-        evidence=evidence,
+        evidence=(evidence,),
     )
 
     assert event.transfer_type is CashTransferType.DEPOSIT
     assert event.amount == Decimal("1000")
-    assert event.evidence is evidence
+    assert event.evidence == (evidence,)
 
 
 @pytest.mark.parametrize(
@@ -203,7 +235,7 @@ def test_cash_transfer_event_rejects_non_positive_amount(
             date=date(2026, 1, 10),
             transfer_type=CashTransferType.WITHDRAWAL,
             amount=amount,
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -219,7 +251,7 @@ def test_cash_transfer_event_rejects_non_finite_amount(
             date=date(2026, 1, 10),
             transfer_type=CashTransferType.DEPOSIT,
             amount=Decimal("NaN"),
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -231,12 +263,12 @@ def test_income_event_preserves_values(
         date=date(2026, 1, 10),
         income_type=IncomeType.INTEREST,
         amount=Decimal("12.34"),
-        evidence=evidence,
+        evidence=(evidence,),
     )
 
     assert event.income_type is IncomeType.INTEREST
     assert event.amount == Decimal("12.34")
-    assert event.evidence is evidence
+    assert event.evidence == (evidence,)
 
 
 @pytest.mark.parametrize(
@@ -259,7 +291,7 @@ def test_income_event_rejects_non_positive_amount(
             date=date(2026, 1, 10),
             income_type=IncomeType.DIVIDEND,
             amount=amount,
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -275,7 +307,7 @@ def test_income_event_rejects_non_finite_amount(
             date=date(2026, 1, 10),
             income_type=IncomeType.OTHER,
             amount=Decimal("Infinity"),
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -286,13 +318,13 @@ def test_fee_event_preserves_values(
     event = FeeEvent(
         date=date(2026, 1, 10),
         amount=Decimal("38"),
-        evidence=evidence,
+        evidence=(evidence,),
         description="Mandatory reorganization fee",
     )
 
     assert event.amount == Decimal("38")
     assert event.description == "Mandatory reorganization fee"
-    assert event.evidence is evidence
+    assert event.evidence == (evidence,)
 
 
 @pytest.mark.parametrize(
@@ -314,7 +346,7 @@ def test_fee_event_rejects_non_positive_amount(
         FeeEvent(
             date=date(2026, 1, 10),
             amount=amount,
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -329,45 +361,57 @@ def test_fee_event_rejects_non_finite_amount(
         FeeEvent(
             date=date(2026, 1, 10),
             amount=Decimal("NaN"),
-            evidence=evidence,
+            evidence=(evidence,),
         )
+
+
+@pytest.mark.parametrize(
+    "direction",
+    [
+        SecurityTransferDirection.IN,
+        SecurityTransferDirection.OUT,
+    ],
+)
+def test_security_transfer_event_preserves_direction(
+    evidence: SourceEvidence,
+    direction: SecurityTransferDirection,
+) -> None:
+    """Security transfers should preserve explicit direction."""
+    event = SecurityTransferEvent(
+        date=date(2026, 1, 10),
+        security=SymbolSecurity("AAPL"),
+        direction=direction,
+        quantity=Decimal("10"),
+        evidence=(evidence,),
+    )
+
+    assert event.direction is direction
+    assert event.quantity == Decimal("10")
+    assert event.evidence == (evidence,)
 
 
 @pytest.mark.parametrize(
     "quantity",
     [
-        Decimal("10"),
+        Decimal("0"),
         Decimal("-10"),
     ],
 )
-def test_security_transfer_event_accepts_signed_quantity(
+def test_security_transfer_event_rejects_non_positive_quantity(
     evidence: SourceEvidence,
     quantity: Decimal,
 ) -> None:
-    """Security transfer direction may be expressed by quantity sign."""
-    event = SecurityTransferEvent(
-        date=date(2026, 1, 10),
-        security=SymbolSecurity("AAPL"),
-        quantity=quantity,
-        evidence=evidence,
-    )
-
-    assert event.quantity == quantity
-
-
-def test_security_transfer_event_rejects_zero_quantity(
-    evidence: SourceEvidence,
-) -> None:
-    """Security transfers should not have zero quantity."""
+    """Security transfer quantities should be positive."""
     with pytest.raises(
         ValueError,
-        match="security transfer quantity must not be zero",
+        match="security transfer quantity must be greater than zero",
     ):
         SecurityTransferEvent(
             date=date(2026, 1, 10),
             security=SymbolSecurity("AAPL"),
-            quantity=Decimal("0"),
-            evidence=evidence,
+            direction=SecurityTransferDirection.IN,
+            quantity=quantity,
+            evidence=(evidence,),
         )
 
 
@@ -382,25 +426,44 @@ def test_security_transfer_event_rejects_non_finite_quantity(
         SecurityTransferEvent(
             date=date(2026, 1, 10),
             security=SymbolSecurity("AAPL"),
+            direction=SecurityTransferDirection.OUT,
             quantity=Decimal("Infinity"),
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
 def test_corporate_action_event_allows_optional_values(
     evidence: SourceEvidence,
 ) -> None:
-    """Corporate actions may omit quantities and cash."""
+    """Corporate actions may omit target, quantities, and cash."""
     event = CorporateActionEvent(
         date=date(2026, 1, 10),
-        action_type=CorporateActionType.SYMBOL_CHANGE,
-        security=SymbolSecurity("AAPL"),
-        evidence=evidence,
+        action_type=CorporateActionType.REVERSE_SPLIT,
+        source_security=SymbolSecurity("UAVS"),
+        evidence=(evidence,),
     )
 
+    assert event.source_security == SymbolSecurity("UAVS")
+    assert event.target_security is None
     assert event.quantity_before is None
     assert event.quantity_after is None
     assert event.cash is None
+
+
+def test_corporate_action_event_preserves_security_transition(
+    evidence: SourceEvidence,
+) -> None:
+    """Corporate actions should preserve source and target identity."""
+    event = CorporateActionEvent(
+        date=date(2026, 1, 10),
+        action_type=CorporateActionType.SYMBOL_CHANGE,
+        source_security=SymbolSecurity("DWACW"),
+        target_security=SymbolSecurity("DJTWW"),
+        evidence=(evidence,),
+    )
+
+    assert event.source_security == SymbolSecurity("DWACW")
+    assert event.target_security == SymbolSecurity("DJTWW")
 
 
 def test_corporate_action_event_preserves_values(
@@ -410,8 +473,8 @@ def test_corporate_action_event_preserves_values(
     event = CorporateActionEvent(
         date=date(2026, 1, 10),
         action_type=CorporateActionType.REVERSE_SPLIT,
-        security=SymbolSecurity("UAVS"),
-        evidence=evidence,
+        source_security=SymbolSecurity("UAVS"),
+        evidence=(evidence,),
         quantity_before=Decimal("5"),
         quantity_after=Decimal("0.1"),
         cash=Decimal("0.24"),
@@ -421,6 +484,30 @@ def test_corporate_action_event_preserves_values(
     assert event.quantity_before == Decimal("5")
     assert event.quantity_after == Decimal("0.1")
     assert event.cash == Decimal("0.24")
+
+
+def test_corporate_action_preserves_multiple_evidence_rows(
+    evidence: SourceEvidence,
+) -> None:
+    """One economic action may retain multiple source rows."""
+    second = SourceEvidence(
+        source=evidence.source,
+        page=2,
+        section="Account Activity",
+        raw_text="Received replacement security",
+        processor="test.processor",
+        sequence=2,
+    )
+
+    event = CorporateActionEvent(
+        date=date(2026, 1, 10),
+        action_type=CorporateActionType.SYMBOL_CHANGE,
+        source_security=SymbolSecurity("DWACW"),
+        target_security=SymbolSecurity("DJTWW"),
+        evidence=(evidence, second),
+    )
+
+    assert event.evidence == (evidence, second)
 
 
 @pytest.mark.parametrize(
@@ -457,12 +544,44 @@ def test_corporate_action_event_rejects_non_finite_values(
         CorporateActionEvent(
             date=date(2026, 1, 10),
             action_type=CorporateActionType.REVERSE_SPLIT,
-            security=SymbolSecurity("UAVS"),
-            evidence=evidence,
+            source_security=SymbolSecurity("UAVS"),
+            evidence=(evidence,),
             quantity_before=values["quantity_before"],
             quantity_after=values["quantity_after"],
             cash=values["cash"],
         )
+
+
+def test_corporate_action_event_rejects_negative_cash(
+    evidence: SourceEvidence,
+) -> None:
+    """Corporate action cash should not be negative."""
+    with pytest.raises(
+        ValueError,
+        match="corporate action cash must not be negative",
+    ):
+        CorporateActionEvent(
+            date=date(2026, 1, 10),
+            action_type=CorporateActionType.CASH_IN_LIEU,
+            source_security=SymbolSecurity("UAVS"),
+            evidence=(evidence,),
+            cash=Decimal("-0.24"),
+        )
+
+
+def test_corporate_action_event_allows_zero_cash(
+    evidence: SourceEvidence,
+) -> None:
+    """Corporate actions may legitimately report zero cash."""
+    event = CorporateActionEvent(
+        date=date(2026, 1, 10),
+        action_type=CorporateActionType.WORTHLESS_SECURITY,
+        source_security=SymbolSecurity("PHMB"),
+        evidence=(evidence,),
+        cash=Decimal("0"),
+    )
+
+    assert event.cash == Decimal("0")
 
 
 def test_option_expiration_event_preserves_values(
@@ -480,12 +599,12 @@ def test_option_expiration_event_preserves_values(
         date=date(2020, 9, 18),
         security=security,
         contracts=Decimal("20"),
-        evidence=evidence,
+        evidence=(evidence,),
     )
 
     assert event.security is security
     assert event.contracts == Decimal("20")
-    assert event.evidence is evidence
+    assert event.evidence == (evidence,)
 
 
 @pytest.mark.parametrize(
@@ -515,7 +634,7 @@ def test_option_expiration_event_rejects_non_positive_contracts(
             date=date(2020, 9, 18),
             security=security,
             contracts=contracts,
-            evidence=evidence,
+            evidence=(evidence,),
         )
 
 
@@ -538,5 +657,23 @@ def test_option_expiration_event_rejects_non_finite_contracts(
             date=date(2020, 9, 18),
             security=security,
             contracts=Decimal("Infinity"),
-            evidence=evidence,
+            evidence=(evidence,),
+        )
+
+
+def test_event_rejects_empty_evidence() -> None:
+    """Normalized events should require source evidence."""
+    with pytest.raises(
+        ValueError,
+        match="event evidence must not be empty",
+    ):
+        TradeEvent(
+            date=date(2026, 1, 15),
+            security=SymbolSecurity("AAPL"),
+            side=TradeSide.BUY,
+            status=TradeStatus.SETTLED,
+            quantity=Decimal("1"),
+            price=Decimal("10"),
+            amount=Decimal("10"),
+            evidence=(),
         )

@@ -97,3 +97,10 @@ def _validate_processor_result(
             f"{statement.broker!r}, expected {processor_broker!r}."
         )
         raise InvalidProcessorResultError(msg)
+
+    if statement.processor_name != processor_name:
+        msg = (
+            f"Processor {processor_name!r} returned processor name "
+            f"{statement.processor_name!r}."
+        )
+        raise InvalidProcessorResultError(msg)

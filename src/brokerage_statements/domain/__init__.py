@@ -17,9 +17,12 @@ from .events import (
     IncomeType,
     NormalizedEvent,
     OptionExpirationEvent,
+    PositionEffect,
+    SecurityTransferDirection,
     SecurityTransferEvent,
     TradeEvent,
     TradeSide,
+    TradeStatus,
 )
 from .evidence import SourceEvidence, StatementSource
 from .securities import (
@@ -50,7 +53,9 @@ __all__ = [
     "OptionSecurity",
     "ParsedStatement",
     "Position",
+    "PositionEffect",
     "Security",
+    "SecurityTransferDirection",
     "SecurityTransferEvent",
     "SourceEvidence",
     "StatementPeriod",
@@ -58,5 +63,6 @@ __all__ = [
     "SymbolSecurity",
     "TradeEvent",
     "TradeSide",
+    "TradeStatus",
     "to_decimal",
 ]

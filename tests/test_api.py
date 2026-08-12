@@ -60,6 +60,7 @@ class FakeProcessor:
     result: ProcessorMatch
     returned_source: StatementSource | None = None
     returned_broker: Broker | None = None
+    returned_processor_name: str | None = None
     received_source: StatementSource | None = None
     received_text: StatementText | None = None
 
@@ -88,10 +89,18 @@ class FakeProcessor:
             if self.returned_broker is None
             else self.returned_broker
         )
+        statement_processor_name = (
+            self.name
+            if self.returned_processor_name is None
+            else self.returned_processor_name
+        )
 
         return ParsedStatement(
             source=statement_source,
             broker=statement_broker,
+            processor_name=statement_processor_name,
+            account_id="1234",
+            currency="USD",
             period=StatementPeriod(
                 start=date(2026, 1, 1),
                 end=date(2026, 1, 31),
@@ -142,6 +151,9 @@ def test_parse_statement_returns_processor_result(
     )
 
     assert statement.broker is Broker.CHARLES_SCHWAB
+    assert statement.processor_name == "test.processor"
+    assert statement.account_id == "1234"
+    assert statement.currency == "USD"
     assert statement.period == StatementPeriod(
         start=date(2026, 1, 1),
         end=date(2026, 1, 31),
@@ -282,6 +294,27 @@ def test_parse_statement_rejects_wrong_processor_broker(
     with pytest.raises(
         InvalidProcessorResultError,
         match="returned broker",
+    ):
+        parse_statement(
+            path,
+            text_reader=FakeReader(text=make_text()),
+            registry=ProcessorRegistry([processor]),
+        )
+
+
+def test_parse_statement_rejects_wrong_processor_name(
+    tmp_path: Path,
+) -> None:
+    """Processor output should retain selected processor identity."""
+    path = tmp_path / "statement.pdf"
+    path.write_bytes(b"statement")
+
+    processor = make_processor()
+    processor.returned_processor_name = "different.processor"
+
+    with pytest.raises(
+        InvalidProcessorResultError,
+        match="returned processor name",
     ):
         parse_statement(
             path,

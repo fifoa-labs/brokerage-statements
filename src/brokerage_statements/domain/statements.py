@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from decimal import Decimal
 
     from .events import NormalizedEvent
-    from .evidence import StatementSource
+    from .evidence import SourceEvidence, StatementSource
     from .securities import Security
 
 
@@ -46,6 +46,7 @@ class Position:
 
     security: Security
     quantity: Decimal
+    evidence: SourceEvidence
 
     def __post_init__(self) -> None:
         """Validate position quantity."""
@@ -60,6 +61,54 @@ class ParsedStatement:
 
     source: StatementSource
     broker: Broker
+    processor_name: str
+    account_id: str
+    currency: str
     period: StatementPeriod
     events: tuple[NormalizedEvent, ...] = ()
     positions: tuple[Position, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Validate and normalize statement identity."""
+        processor_name = _normalize_required_text(
+            self.processor_name,
+            "processor_name",
+        )
+        account_id = _normalize_required_text(
+            self.account_id,
+            "account_id",
+        )
+        currency = _normalize_required_text(
+            self.currency,
+            "currency",
+        ).upper()
+
+        object.__setattr__(
+            self,
+            "processor_name",
+            processor_name,
+        )
+        object.__setattr__(
+            self,
+            "account_id",
+            account_id,
+        )
+        object.__setattr__(
+            self,
+            "currency",
+            currency,
+        )
+
+
+def _normalize_required_text(
+    value: str,
+    name: str,
+) -> str:
+    """Normalize a required statement identity string."""
+    normalized = value.strip()
+
+    if not normalized:
+        msg = f"{name} must not be empty."
+        raise ValueError(msg)
+
+    return normalized
