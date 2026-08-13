@@ -183,6 +183,37 @@ clean-coverage: ## Remove coverage output
 		htmlcov
 
 # ============================================
+# 🔎 STATEMENT INSPECTION
+# --------------------------------------------
+
+.PHONY: inspect-statement smoke-archive
+
+inspect-statement: ## Inspect PDF text: make inspect-statement file=... [page=] [head=]
+	@if [ -z "$(file)" ]; then \
+		echo "Usage: make inspect-statement file=path/to/statement.pdf [page=1] [head=1000]"; \
+		exit 1; \
+	fi
+	@args='"$(file)"'; \
+	if [ -n "$(page)" ]; then \
+		args="$$args --page $(page)"; \
+	fi; \
+	if [ -n "$(head)" ]; then \
+		args="$$args --head $(head)"; \
+	fi; \
+	eval uv run python scripts/inspect_statement.py $$args
+
+smoke-archive: ## Smoke-test statements: make smoke-archive folder=... [limit=] [continue=1] [traceback=1]
+	@if [ -z "$(folder)" ]; then \
+		echo "Usage: make smoke-archive folder=path/to/statements [limit=1] [continue=1] [traceback=1]"; \
+		exit 1; \
+	fi
+	@uv run python scripts/archive_smoke.py \
+		"$(folder)" \
+		$(if $(limit),--limit "$(limit)",) \
+		$(if $(continue),--continue-on-error,) \
+		$(if $(traceback),--traceback,)
+
+# ============================================
 # 🌲 FILE TREE / INSPECTION
 # --------------------------------------------
 
