@@ -17,10 +17,20 @@ from brokerage_statements.processors import (
     BrokerDetector,
     ProcessorRegistry,
 )
+from brokerage_statements.processors.charlesschwab import (
+    BROKER_SIGNATURES as SCHWAB_BROKER_SIGNATURES,
+)
+from brokerage_statements.processors.charlesschwab import (
+    Monthly2023Processor as SchwabMonthly2023Processor,
+)
 from brokerage_statements.processors.tdameritrade import (
-    BROKER_SIGNATURES,
-    Monthly2020Processor,
-    Transition2023Processor,
+    BROKER_SIGNATURES as TDA_BROKER_SIGNATURES,
+)
+from brokerage_statements.processors.tdameritrade import (
+    Monthly2020Processor as TdaMonthly2020Processor,
+)
+from brokerage_statements.processors.tdameritrade import (
+    Transition2023Processor as TdaTransition2023Processor,
 )
 from brokerage_statements.text import PdfStatementTextReader
 
@@ -83,15 +93,21 @@ def discover_statements(
 
 def build_broker_detector() -> BrokerDetector:
     """Return detector configured with implemented broker signatures."""
-    return BrokerDetector(BROKER_SIGNATURES)
+    return BrokerDetector(
+        (
+            *TDA_BROKER_SIGNATURES,
+            *SCHWAB_BROKER_SIGNATURES,
+        )
+    )
 
 
 def build_processor_registry() -> ProcessorRegistry:
     """Return registry containing implemented statement processors."""
     return ProcessorRegistry(
         [
-            Transition2023Processor(),
-            Monthly2020Processor(),
+            TdaTransition2023Processor(),
+            TdaMonthly2020Processor(),
+            SchwabMonthly2023Processor(),
         ]
     )
 
