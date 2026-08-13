@@ -14,7 +14,9 @@ from brokerage_statements.exceptions import (
     InvalidDecimalError,
     InvalidProcessorResultError,
     ProcessorSelectionError,
+    StatementParseError,
     StatementSourceError,
+    UnknownActivityError,
     UnsupportedBrokerError,
     UnsupportedStatementError,
 )
@@ -94,6 +96,23 @@ def test_statement_source_error_inheritance() -> None:
 
     assert isinstance(error, BrokerageStatementsError)
     assert str(error) == "source failed"
+
+
+def test_statement_parse_error_inheritance() -> None:
+    """Statement parsing errors should use the package hierarchy."""
+    error = StatementParseError("parse failed")
+
+    assert isinstance(error, BrokerageStatementsError)
+    assert str(error) == "parse failed"
+
+
+def test_unknown_activity_error_inheritance() -> None:
+    """Unknown activity should be a statement parsing error."""
+    error = UnknownActivityError("unknown activity")
+
+    assert isinstance(error, StatementParseError)
+    assert isinstance(error, BrokerageStatementsError)
+    assert str(error) == "unknown activity"
 
 
 def test_invalid_processor_result_error_inheritance() -> None:

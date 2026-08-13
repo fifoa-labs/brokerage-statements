@@ -45,3 +45,11 @@ class UnsupportedBrokerError(BrokerDetectionError):
 
 class AmbiguousBrokerError(BrokerDetectionError):
     """Raised when more than one brokerage institution is detected."""
+
+
+class StatementParseError(BrokerageStatementsError):
+    """Base error for deterministic statement parsing failures."""
+
+
+class UnknownActivityError(StatementParseError):
+    """Raised when statement activity cannot be normalized safely."""

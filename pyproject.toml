@@ -33,7 +33,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "pdfplumber>=0.11,<0.12",
+]
 
 [project.urls]
 Homepage = "https://github.com/fifoa-labs/brokerage-statements"
