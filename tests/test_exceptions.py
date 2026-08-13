@@ -7,12 +7,15 @@ Tests for the brokerage-statements exception hierarchy.
 from __future__ import annotations
 
 from brokerage_statements.exceptions import (
+    AmbiguousBrokerError,
     AmbiguousProcessorError,
     BrokerageStatementsError,
+    BrokerDetectionError,
     InvalidDecimalError,
     InvalidProcessorResultError,
     ProcessorSelectionError,
     StatementSourceError,
+    UnsupportedBrokerError,
     UnsupportedStatementError,
 )
 
@@ -31,6 +34,32 @@ def test_invalid_decimal_error_inheritance() -> None:
     assert isinstance(error, BrokerageStatementsError)
     assert isinstance(error, ValueError)
     assert str(error) == "invalid decimal"
+
+
+def test_broker_detection_error_inheritance() -> None:
+    """Broker detection errors should use the package hierarchy."""
+    error = BrokerDetectionError("detection failed")
+
+    assert isinstance(error, BrokerageStatementsError)
+    assert str(error) == "detection failed"
+
+
+def test_unsupported_broker_error_inheritance() -> None:
+    """Unsupported brokers should be broker detection errors."""
+    error = UnsupportedBrokerError("unsupported broker")
+
+    assert isinstance(error, BrokerDetectionError)
+    assert isinstance(error, BrokerageStatementsError)
+    assert str(error) == "unsupported broker"
+
+
+def test_ambiguous_broker_error_inheritance() -> None:
+    """Ambiguous brokers should be broker detection errors."""
+    error = AmbiguousBrokerError("ambiguous broker")
+
+    assert isinstance(error, BrokerDetectionError)
+    assert isinstance(error, BrokerageStatementsError)
+    assert str(error) == "ambiguous broker"
 
 
 def test_processor_selection_error_inheritance() -> None:

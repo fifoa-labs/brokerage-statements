@@ -58,11 +58,6 @@ class StatementProcessor(Protocol):
         """Return the brokerage institution handled by the processor."""
         ...
 
-    @property
-    def priority(self) -> int:
-        """Return the processor selection priority."""
-        ...
-
     def match(
         self,
         text: StatementText,

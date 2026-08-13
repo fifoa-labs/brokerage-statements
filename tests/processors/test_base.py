@@ -83,3 +83,16 @@ def test_processor_match_requires_reason() -> None:
             confidence=0,
             reason=" ",
         )
+
+
+def test_processor_match_allows_unmatched_result() -> None:
+    """Unmatched processors should use zero confidence."""
+    match = ProcessorMatch(
+        matched=False,
+        confidence=0,
+        reason="Statement layout not recognized.",
+    )
+
+    assert match.matched is False
+    assert match.confidence == 0
+    assert match.reason == "Statement layout not recognized."

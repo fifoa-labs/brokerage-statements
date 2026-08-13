@@ -16,13 +16,14 @@ from brokerage_statements.exceptions import (
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from brokerage_statements.domain import Broker
     from brokerage_statements.text import StatementText
 
-    from .base import ProcessorMatch, StatementProcessor
+    from .base import StatementProcessor
 
 
 class ProcessorRegistry:
-    """Store processors and select exactly one compatible processor."""
+    """Store processors and select one compatible broker processor."""
 
     def __init__(
         self,
@@ -37,36 +38,42 @@ class ProcessorRegistry:
         """Return registered processors in deterministic order."""
         return self._processors
 
-    def select(self, text: StatementText) -> StatementProcessor:
-        """Return the unique best processor for statement text."""
-        candidates: list[tuple[StatementProcessor, ProcessorMatch]] = []
+    def select(
+        self,
+        text: StatementText,
+        *,
+        broker: Broker,
+    ) -> StatementProcessor:
+        """Return the unique highest-confidence processor."""
+        processors = tuple(
+            processor
+            for processor in self._processors
+            if processor.broker is broker
+        )
 
-        for processor in self._processors:
-            match = processor.match(text)
+        if not processors:
+            msg = f"No registered processors for broker {broker.value!r}."
+            raise UnsupportedStatementError(msg)
 
-            if match.matched:
-                candidates.append((processor, match))
+        candidates = [
+            (processor, match)
+            for processor in processors
+            if (match := processor.match(text)).matched
+        ]
 
         if not candidates:
-            msg = "No registered processor supports this statement."
+            msg = (
+                "No registered processor supports this statement "
+                f"for broker {broker.value!r}."
+            )
             raise UnsupportedStatementError(msg)
 
         best_confidence = max(match.confidence for _, match in candidates)
 
-        confidence_winners = [
-            (processor, match)
-            for processor, match in candidates
-            if match.confidence == best_confidence
-        ]
-
-        best_priority = max(
-            processor.priority for processor, _ in confidence_winners
-        )
-
         winners = [
             processor
-            for processor, _ in confidence_winners
-            if processor.priority == best_priority
+            for processor, match in candidates
+            if match.confidence == best_confidence
         ]
 
         if len(winners) != 1:

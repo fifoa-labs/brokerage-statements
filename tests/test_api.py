@@ -23,8 +23,11 @@ from brokerage_statements.domain import (
 from brokerage_statements.exceptions import (
     InvalidProcessorResultError,
     StatementSourceError,
+    UnsupportedBrokerError,
 )
 from brokerage_statements.processors import (
+    BrokerDetector,
+    BrokerSignature,
     ProcessorMatch,
     ProcessorRegistry,
 )
@@ -51,12 +54,25 @@ class FakeReader:
 
 
 @dataclass(slots=True)
+class FailingReader:
+    """Text reader that fails deterministically."""
+
+    def read(
+        self,
+        source: StatementSource,
+    ) -> StatementText:
+        """Raise a deterministic extraction failure."""
+        del source
+        msg = "text extraction failed"
+        raise RuntimeError(msg)
+
+
+@dataclass(slots=True)
 class FakeProcessor:
     """Minimal processor for orchestration tests."""
 
     name: str
     broker: Broker
-    priority: int
     result: ProcessorMatch
     returned_source: StatementSource | None = None
     returned_broker: Broker | None = None
@@ -120,17 +136,53 @@ def make_text() -> StatementText:
     )
 
 
+def make_broker_detector() -> BrokerDetector:
+    """Return a detector matching representative test text."""
+    return BrokerDetector(
+        [
+            BrokerSignature(
+                name="test.schwab",
+                broker=Broker.CHARLES_SCHWAB,
+                markers=("Brokerage statement",),
+            ),
+        ]
+    )
+
+
 def make_processor() -> FakeProcessor:
     """Return a processor that matches the test statement."""
     return FakeProcessor(
         name="test.processor",
         broker=Broker.CHARLES_SCHWAB,
-        priority=10,
         result=ProcessorMatch(
             matched=True,
             confidence=100,
             reason="Test statement matched.",
         ),
+    )
+
+
+def parse_test_statement(
+    path: str | Path,
+    *,
+    reader: FakeReader | FailingReader | None = None,
+    processor: FakeProcessor | None = None,
+    detector: BrokerDetector | None = None,
+) -> ParsedStatement:
+    """Parse a test statement with default orchestration dependencies."""
+    selected_reader = (
+        FakeReader(text=make_text()) if reader is None else reader
+    )
+    selected_processor = make_processor() if processor is None else processor
+    selected_detector = (
+        make_broker_detector() if detector is None else detector
+    )
+
+    return parse_statement(
+        path,
+        text_reader=selected_reader,
+        broker_detector=selected_detector,
+        registry=ProcessorRegistry([selected_processor]),
     )
 
 
@@ -141,14 +193,7 @@ def test_parse_statement_returns_processor_result(
     path = tmp_path / "statement.pdf"
     path.write_bytes(b"brokerage statement")
 
-    reader = FakeReader(text=make_text())
-    processor = make_processor()
-
-    statement = parse_statement(
-        path,
-        text_reader=reader,
-        registry=ProcessorRegistry([processor]),
-    )
+    statement = parse_test_statement(path)
 
     assert statement.broker is Broker.CHARLES_SCHWAB
     assert statement.processor_name == "test.processor"
@@ -167,11 +212,7 @@ def test_parse_statement_accepts_string_path(
     path = tmp_path / "statement.pdf"
     path.write_bytes(b"brokerage statement")
 
-    statement = parse_statement(
-        str(path),
-        text_reader=FakeReader(text=make_text()),
-        registry=ProcessorRegistry([make_processor()]),
-    )
+    statement = parse_test_statement(str(path))
 
     assert statement.source.path == path
 
@@ -184,11 +225,7 @@ def test_parse_statement_builds_sha256_source_identity(
     path = tmp_path / "statement.pdf"
     path.write_bytes(contents)
 
-    statement = parse_statement(
-        path,
-        text_reader=FakeReader(text=make_text()),
-        registry=ProcessorRegistry([make_processor()]),
-    )
+    statement = parse_test_statement(path)
 
     assert statement.source.sha256 == sha256(contents).hexdigest()
 
@@ -203,20 +240,14 @@ def test_parse_statement_passes_source_to_reader(
 
     reader = FakeReader(text=make_text())
 
-    parse_statement(
+    parse_test_statement(
         path,
-        text_reader=reader,
-        registry=ProcessorRegistry([make_processor()]),
+        reader=reader,
     )
 
     assert reader.received_source is not None
     assert reader.received_source.path == path
-    assert (
-        reader.received_source.sha256
-        == sha256(
-            contents,
-        ).hexdigest()
-    )
+    assert reader.received_source.sha256 == sha256(contents).hexdigest()
 
 
 def test_parse_statement_passes_source_and_text_to_processor(
@@ -230,10 +261,10 @@ def test_parse_statement_passes_source_and_text_to_processor(
     reader = FakeReader(text=text)
     processor = make_processor()
 
-    parse_statement(
+    parse_test_statement(
         path,
-        text_reader=reader,
-        registry=ProcessorRegistry([processor]),
+        reader=reader,
+        processor=processor,
     )
 
     assert processor.received_source is reader.received_source
@@ -250,10 +281,50 @@ def test_parse_statement_rejects_unreadable_source(
         StatementSourceError,
         match="Could not read statement source",
     ):
-        parse_statement(
+        parse_test_statement(path)
+
+
+def test_parse_statement_propagates_reader_failure(
+    tmp_path: Path,
+) -> None:
+    """Text extraction failures should propagate unchanged."""
+    path = tmp_path / "statement.pdf"
+    path.write_bytes(b"statement")
+
+    with pytest.raises(
+        RuntimeError,
+        match="text extraction failed",
+    ):
+        parse_test_statement(
             path,
-            text_reader=FakeReader(text=make_text()),
-            registry=ProcessorRegistry([make_processor()]),
+            reader=FailingReader(),
+        )
+
+
+def test_parse_statement_rejects_unknown_broker(
+    tmp_path: Path,
+) -> None:
+    """Broker detection should fail before processor selection."""
+    path = tmp_path / "statement.pdf"
+    path.write_bytes(b"statement")
+
+    detector = BrokerDetector(
+        [
+            BrokerSignature(
+                name="test.unknown",
+                broker=Broker.CHARLES_SCHWAB,
+                markers=("different marker",),
+            ),
+        ]
+    )
+
+    with pytest.raises(
+        UnsupportedBrokerError,
+        match="No supported broker signature matched",
+    ):
+        parse_test_statement(
+            path,
+            detector=detector,
         )
 
 
@@ -274,10 +345,9 @@ def test_parse_statement_rejects_wrong_processor_source(
         InvalidProcessorResultError,
         match="returned a statement for a different source",
     ):
-        parse_statement(
+        parse_test_statement(
             path,
-            text_reader=FakeReader(text=make_text()),
-            registry=ProcessorRegistry([processor]),
+            processor=processor,
         )
 
 
@@ -295,10 +365,9 @@ def test_parse_statement_rejects_wrong_processor_broker(
         InvalidProcessorResultError,
         match="returned broker",
     ):
-        parse_statement(
+        parse_test_statement(
             path,
-            text_reader=FakeReader(text=make_text()),
-            registry=ProcessorRegistry([processor]),
+            processor=processor,
         )
 
 
@@ -316,8 +385,7 @@ def test_parse_statement_rejects_wrong_processor_name(
         InvalidProcessorResultError,
         match="returned processor name",
     ):
-        parse_statement(
+        parse_test_statement(
             path,
-            text_reader=FakeReader(text=make_text()),
-            registry=ProcessorRegistry([processor]),
+            processor=processor,
         )

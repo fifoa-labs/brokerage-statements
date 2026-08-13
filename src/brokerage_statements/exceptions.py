@@ -33,3 +33,15 @@ class StatementSourceError(BrokerageStatementsError):
 
 class InvalidProcessorResultError(BrokerageStatementsError):
     """Raised when a processor returns inconsistent statement data."""
+
+
+class BrokerDetectionError(BrokerageStatementsError):
+    """Base error for brokerage institution detection failures."""
+
+
+class UnsupportedBrokerError(BrokerDetectionError):
+    """Raised when no supported broker can be detected."""
+
+
+class AmbiguousBrokerError(BrokerDetectionError):
+    """Raised when more than one brokerage institution is detected."""

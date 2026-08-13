@@ -32,7 +32,6 @@ class FakeProcessor:
 
     name: str
     broker: Broker
-    priority: int
     result: ProcessorMatch
 
     def match(self, text: StatementText) -> ProcessorMatch:
@@ -53,9 +52,9 @@ class FakeProcessor:
 def make_processor(
     *,
     name: str,
+    broker: Broker = Broker.CHARLES_SCHWAB,
     matched: bool = True,
     confidence: int = 90,
-    priority: int = 10,
 ) -> FakeProcessor:
     """Create a processor with deterministic match behavior."""
     if not matched:
@@ -63,8 +62,7 @@ def make_processor(
 
     return FakeProcessor(
         name=name,
-        broker=Broker.CHARLES_SCHWAB,
-        priority=priority,
+        broker=broker,
         result=ProcessorMatch(
             matched=matched,
             confidence=confidence,
@@ -95,7 +93,10 @@ def test_registry_selects_only_matching_processor() -> None:
     processor = make_processor(name="test.one")
     registry = ProcessorRegistry([processor])
 
-    selected = registry.select(StatementText(pages=()))
+    selected = registry.select(
+        StatementText(pages=()),
+        broker=Broker.CHARLES_SCHWAB,
+    )
 
     assert selected is processor
 
@@ -112,9 +113,52 @@ def test_registry_ignores_unmatched_processors() -> None:
     )
     registry = ProcessorRegistry([unmatched, matched])
 
-    selected = registry.select(StatementText(pages=()))
+    selected = registry.select(
+        StatementText(pages=()),
+        broker=Broker.CHARLES_SCHWAB,
+    )
 
     assert selected is matched
+
+
+def test_registry_ignores_processors_for_other_brokers() -> None:
+    """Only processors for the detected broker should compete."""
+    td = make_processor(
+        name="td.processor",
+        broker=Broker.TD_AMERITRADE,
+        confidence=100,
+    )
+    schwab = make_processor(
+        name="schwab.processor",
+        broker=Broker.CHARLES_SCHWAB,
+        confidence=80,
+    )
+    registry = ProcessorRegistry([td, schwab])
+
+    selected = registry.select(
+        StatementText(pages=()),
+        broker=Broker.CHARLES_SCHWAB,
+    )
+
+    assert selected is schwab
+
+
+def test_registry_rejects_broker_without_registered_processors() -> None:
+    """A broker without registered processors should fail."""
+    processor = make_processor(
+        name="schwab.processor",
+        broker=Broker.CHARLES_SCHWAB,
+    )
+    registry = ProcessorRegistry([processor])
+
+    with pytest.raises(
+        UnsupportedStatementError,
+        match="No registered processors for broker 'tdameritrade'",
+    ):
+        registry.select(
+            StatementText(pages=()),
+            broker=Broker.TD_AMERITRADE,
+        )
 
 
 def test_registry_rejects_statement_when_registry_is_empty() -> None:
@@ -123,9 +167,12 @@ def test_registry_rejects_statement_when_registry_is_empty() -> None:
 
     with pytest.raises(
         UnsupportedStatementError,
-        match="No registered processor supports this statement",
+        match="No registered processors for broker 'charlesschwab'",
     ):
-        registry.select(StatementText(pages=()))
+        registry.select(
+            StatementText(pages=()),
+            broker=Broker.CHARLES_SCHWAB,
+        )
 
 
 def test_registry_rejects_statement_when_nothing_matches() -> None:
@@ -142,9 +189,15 @@ def test_registry_rejects_statement_when_nothing_matches() -> None:
 
     with pytest.raises(
         UnsupportedStatementError,
-        match="No registered processor supports this statement",
+        match=(
+            "No registered processor supports this statement "
+            "for broker 'charlesschwab'"
+        ),
     ):
-        registry.select(StatementText(pages=()))
+        registry.select(
+            StatementText(pages=()),
+            broker=Broker.CHARLES_SCHWAB,
+        )
 
 
 def test_registry_selects_highest_confidence() -> None:
@@ -152,50 +205,30 @@ def test_registry_selects_highest_confidence() -> None:
     lower = make_processor(
         name="test.lower",
         confidence=70,
-        priority=100,
     )
     higher = make_processor(
         name="test.higher",
         confidence=90,
-        priority=1,
     )
     registry = ProcessorRegistry([lower, higher])
 
-    selected = registry.select(StatementText(pages=()))
+    selected = registry.select(
+        StatementText(pages=()),
+        broker=Broker.CHARLES_SCHWAB,
+    )
 
     assert selected is higher
 
 
-def test_registry_uses_priority_after_equal_confidence() -> None:
-    """Priority should resolve processors with equal confidence."""
-    lower_priority = make_processor(
-        name="test.lower",
-        confidence=90,
-        priority=10,
-    )
-    higher_priority = make_processor(
-        name="test.higher",
-        confidence=90,
-        priority=20,
-    )
-    registry = ProcessorRegistry([lower_priority, higher_priority])
-
-    selected = registry.select(StatementText(pages=()))
-
-    assert selected is higher_priority
-
-
-def test_registry_rejects_equivalent_winners() -> None:
-    """Equivalent processor winners should be ambiguous."""
+def test_registry_rejects_equal_confidence_winners() -> None:
+    """Equal highest-confidence processors should be ambiguous."""
     first = make_processor(
         name="test.first",
         confidence=90,
-        priority=10,
     )
     second = make_processor(
         name="test.second",
         confidence=90,
-        priority=10,
     )
     registry = ProcessorRegistry([first, second])
 
@@ -203,7 +236,10 @@ def test_registry_rejects_equivalent_winners() -> None:
         AmbiguousProcessorError,
         match="Ambiguous statement processors: test.first, test.second",  # noqa: RUF043
     ):
-        registry.select(StatementText(pages=()))
+        registry.select(
+            StatementText(pages=()),
+            broker=Broker.CHARLES_SCHWAB,
+        )
 
 
 def test_registry_reports_ambiguous_processors_sorted() -> None:
@@ -211,12 +247,10 @@ def test_registry_reports_ambiguous_processors_sorted() -> None:
     second = make_processor(
         name="test.second",
         confidence=90,
-        priority=10,
     )
     first = make_processor(
         name="test.first",
         confidence=90,
-        priority=10,
     )
     registry = ProcessorRegistry([second, first])
 
@@ -224,18 +258,46 @@ def test_registry_reports_ambiguous_processors_sorted() -> None:
         AmbiguousProcessorError,
         match="Ambiguous statement processors: test.first, test.second",  # noqa: RUF043
     ):
-        registry.select(StatementText(pages=()))
+        registry.select(
+            StatementText(pages=()),
+            broker=Broker.CHARLES_SCHWAB,
+        )
+
+
+def test_registry_selection_is_independent_of_order() -> None:
+    """Registration order should not affect the unique winner."""
+    lower = make_processor(
+        name="test.lower",
+        confidence=80,
+    )
+    higher = make_processor(
+        name="test.higher",
+        confidence=90,
+    )
+    text = StatementText(pages=())
+
+    first = ProcessorRegistry([lower, higher]).select(
+        text,
+        broker=Broker.CHARLES_SCHWAB,
+    )
+    second = ProcessorRegistry([higher, lower]).select(
+        text,
+        broker=Broker.CHARLES_SCHWAB,
+    )
+
+    assert first is higher
+    assert second is higher
 
 
 def test_registry_rejects_duplicate_processor_names() -> None:
     """Processor names should uniquely identify implementations."""
     first = make_processor(
         name="test.duplicate",
-        confidence=80,
+        broker=Broker.CHARLES_SCHWAB,
     )
     second = make_processor(
         name="test.duplicate",
-        confidence=90,
+        broker=Broker.TD_AMERITRADE,
     )
 
     with pytest.raises(

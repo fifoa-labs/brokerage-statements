@@ -21,7 +21,10 @@ from brokerage_statements.exceptions import (
 )
 
 if TYPE_CHECKING:
-    from brokerage_statements.processors import ProcessorRegistry
+    from brokerage_statements.processors import (
+        BrokerDetector,
+        ProcessorRegistry,
+    )
     from brokerage_statements.text import StatementTextReader
 
 
@@ -29,13 +32,23 @@ def parse_statement(
     source: str | Path,
     *,
     text_reader: StatementTextReader,
+    broker_detector: BrokerDetector,
     registry: ProcessorRegistry,
 ) -> ParsedStatement:
     """Parse one brokerage statement into normalized domain data."""
     statement_source = _build_statement_source(source)
     text = text_reader.read(statement_source)
-    processor = registry.select(text)
-    statement = processor.parse(statement_source, text)
+    broker = broker_detector.detect(text)
+
+    processor = registry.select(
+        text,
+        broker=broker,
+    )
+
+    statement = processor.parse(
+        statement_source,
+        text,
+    )
 
     _validate_processor_result(
         statement=statement,
