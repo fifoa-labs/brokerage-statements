@@ -31,6 +31,7 @@ from .corporate_actions import (
     parse_reorganization_fee,
 )
 from .income import parse_income
+from .options import parse_option_trade
 from .rows import extract_activity_rows
 from .trades import parse_trade
 from .transfers import (
@@ -107,6 +108,14 @@ def _parse_row(  # noqa: C901, PLR0911
         processor=processor_name,
         sequence=sequence,
     )
+
+    option_trade = parse_option_trade(
+        row,
+        evidence,
+    )
+
+    if option_trade is not None:
+        return option_trade
 
     trade = parse_trade(
         row,

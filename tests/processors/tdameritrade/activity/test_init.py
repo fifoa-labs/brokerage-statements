@@ -1,5 +1,5 @@
 """
-tests/processors/tdameritrade/activity/test_activity.py
+tests/processors/tdameritrade/activity/test_init.py
 
 Tests for TD Ameritrade account-activity orchestration.
 """
@@ -11,6 +11,7 @@ import pytest
 from brokerage_statements.domain import (
     CashTransferEvent,
     IncomeEvent,
+    OptionSecurity,
     TradeEvent,
 )
 from brokerage_statements.exceptions import UnknownActivityError
@@ -124,6 +125,25 @@ def test_parse_activity_preserves_evidence_metadata() -> None:
     assert evidence.sequence == 1
 
 
+def test_parse_activity_dispatches_option_before_equity_trade() -> None:
+    """Option rows should be handled before the generic equity parser."""
+    events = parse_page(
+        "Account Activity\n"
+        "07/15/20 07/16/20 Cash Buy - Securities Purchased "
+        "SNAP INC - 2 2.19 (439.33) (439.33)\n"
+        "SNAP Aug 21 20 25.0 C TO OPEN\n"
+        "Commission/Fee 1.30\n"
+        "Regulatory Fee 0.03"
+    )
+
+    assert len(events) == 3
+
+    trade = events[0]
+
+    assert isinstance(trade, TradeEvent)
+    assert isinstance(trade.security, OptionSecurity)
+
+
 def test_parse_activity_allows_no_rows() -> None:
     """Activity sections without transaction rows should return no events."""
     events = parse_page(
@@ -144,4 +164,6 @@ def test_parse_activity_rejects_unknown_activity() -> None:
         UnknownActivityError,
         match="Unknown TD Ameritrade account activity",
     ):
-        parse_page(f"Account Activity\n{row}")
+        parse_page(
+            f"Account Activity\n{row}",
+        )
