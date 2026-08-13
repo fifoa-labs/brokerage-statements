@@ -32,6 +32,7 @@ from .corporate_actions import (
     parse_cash_in_lieu,
     parse_reorganization_fee,
 )
+from .expenses import parse_expense
 from .income import parse_income
 from .option_expirations import parse_option_expiration
 from .options import parse_option_trade
@@ -78,6 +79,7 @@ _ROW_PARSERS: tuple[RowParser, ...] = (
     parse_cash_in_lieu,
     parse_option_expiration,
     parse_security_transfer,
+    parse_expense,
     parse_income,
 )
 
