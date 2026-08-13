@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from brokerage_statements.domain import (
     CashTransferEvent,
+    CorporateActionEvent,
     FeeEvent,
     IncomeEvent,
     SecurityTransferEvent,
@@ -22,6 +23,12 @@ from brokerage_statements.exceptions import UnknownActivityError
 from .cash import (
     is_known_internal_journal,
     parse_cash_transfer,
+)
+from .corporate_actions import (
+    is_reverse_split_delivery,
+    is_reverse_split_receipt,
+    parse_cash_in_lieu,
+    parse_reorganization_fee,
 )
 from .income import parse_income
 from .rows import extract_activity_rows
@@ -42,6 +49,7 @@ ActivityEvent = (
     | IncomeEvent
     | FeeEvent
     | SecurityTransferEvent
+    | CorporateActionEvent
 )
 
 
@@ -68,7 +76,7 @@ def parse_activity(
     return tuple(events)
 
 
-def _parse_row(
+def _parse_row(  # noqa: C901, PLR0911
     *,
     source: StatementSource,
     page_number: int,
@@ -78,6 +86,14 @@ def _parse_row(
 ) -> tuple[ActivityEvent, ...]:
     """Parse one logical TD Ameritrade activity row."""
     if is_known_internal_journal(row):
+        return ()
+
+    # Reverse-split delivery and receipt rows are components of a
+    # corporate action, not external security transfers.
+    if is_reverse_split_delivery(row):
+        return ()
+
+    if is_reverse_split_receipt(row):
         return ()
 
     if is_known_internal_security_transfer(row):
@@ -107,6 +123,22 @@ def _parse_row(
 
     if cash_transfer is not None:
         return (cash_transfer,)
+
+    reorganization_fee = parse_reorganization_fee(
+        row,
+        evidence,
+    )
+
+    if reorganization_fee is not None:
+        return (reorganization_fee,)
+
+    cash_in_lieu = parse_cash_in_lieu(
+        row,
+        evidence,
+    )
+
+    if cash_in_lieu is not None:
+        return (cash_in_lieu,)
 
     security_transfer = parse_security_transfer(
         row,

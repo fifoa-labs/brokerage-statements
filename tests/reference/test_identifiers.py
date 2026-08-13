@@ -35,6 +35,10 @@ def test_resolve_symbol_preserves_symbol_identity(
         ("91232N207", "USO"),
         ("25460E166", "JNUG"),
         ("25460G831", "JNUG"),
+        ("98420U604", "XSPA"),
+        ("98420U703", "XSPA"),
+        ("Y73760301", "SHIP"),
+        ("Y73760194", "SHIP"),
     ],
 )
 def test_resolve_symbol_resolves_known_cusip(
