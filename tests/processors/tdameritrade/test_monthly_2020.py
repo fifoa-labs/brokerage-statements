@@ -257,3 +257,82 @@ def test_td_broker_signature_is_stable() -> None:
     assert signature.matches(
         make_supported_text(),
     )
+
+
+def test_monthly_2020_rejects_transition_statement() -> None:
+    """Transition statements should use their dedicated processor."""
+    text = StatementText(
+        pages=(
+            StatementPage(
+                number=1,
+                text=(
+                    "Statement Reporting Period:\n"
+                    "11/01/23 - 11/30/23\n"
+                    "Statement for Account # 498-119578\n"
+                    "Portfolio Summary\n"
+                    "Account Activity\n"
+                    "TDA TO CS&CO TRANSFER\n"
+                    "IDA FEATURE DURING TRANSITION"
+                ),
+            ),
+        ),
+    )
+
+    result = Monthly2020Processor().match(text)
+
+    assert result.matched is False
+    assert result.confidence == 0
+    assert result.reason == (
+        "TD Ameritrade transition statement requires the transition processor."
+    )
+
+
+def test_monthly_2020_rejects_actual_transition_statement() -> None:
+    """Actual Schwab transition statements should use their processor."""
+    text = StatementText(
+        pages=(
+            StatementPage(
+                number=1,
+                text=(
+                    "Statement Reporting Period:\n"
+                    "11/01/23 - 11/30/23\n"
+                    "Statement for Account # 498-119578\n"
+                    "Portfolio Summary\n"
+                    "Account Activity\n"
+                    "IDA FEATURE DURING TRANSITION\n"
+                    "TDA TO CS&CO TRANSFER"
+                ),
+            ),
+        ),
+    )
+
+    result = Monthly2020Processor().match(text)
+
+    assert result.matched is False
+    assert result.confidence == 0
+    assert "transition processor" in result.reason
+
+
+def test_monthly_2020_allows_transition_notice_without_transfer() -> None:
+    """Transition boilerplate alone should not exclude monthly statements."""
+    text = StatementText(
+        pages=(
+            StatementPage(
+                number=1,
+                text=(
+                    "Statement Reporting Period:\n"
+                    "02/01/23 - 02/28/23\n"
+                    "Statement for Account # 498-119578\n"
+                    "Portfolio Summary\n"
+                    "Account Positions\n"
+                    "Account Activity\n"
+                    "IDA FEATURE DURING TRANSITION"
+                ),
+            ),
+        ),
+    )
+
+    result = Monthly2020Processor().match(text)
+
+    assert result.matched is True
+    assert result.confidence == 100

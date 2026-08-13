@@ -20,6 +20,7 @@ from brokerage_statements.processors import (
 from brokerage_statements.processors.tdameritrade import (
     BROKER_SIGNATURES,
     Monthly2020Processor,
+    Transition2023Processor,
 )
 from brokerage_statements.text import PdfStatementTextReader
 
@@ -89,6 +90,7 @@ def build_processor_registry() -> ProcessorRegistry:
     """Return registry containing implemented statement processors."""
     return ProcessorRegistry(
         [
+            Transition2023Processor(),
             Monthly2020Processor(),
         ]
     )

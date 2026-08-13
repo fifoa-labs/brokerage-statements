@@ -1,7 +1,7 @@
 """
 src/brokerage_statements/processors/tdameritrade/sections.py
 
-Structural section discovery for TD Ameritrade monthly statements.
+Structural section discovery for TD Ameritrade statements.
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ class StatementSections:
 
 def extract_sections(
     text: StatementText,
+    *,
+    require_positions: bool = True,
 ) -> StatementSections:
     """Locate known TD Ameritrade statement sections."""
     summary = _pages_containing(
@@ -48,7 +50,7 @@ def extract_sections(
         msg = "TD Ameritrade Portfolio Summary section not found."
         raise ValueError(msg)
 
-    if not positions:
+    if require_positions and not positions:
         msg = "TD Ameritrade Account Positions section not found."
         raise ValueError(msg)
 

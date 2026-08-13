@@ -120,3 +120,39 @@ def test_extract_sections_rejects_missing_required_section(
         extract_sections(
             StatementText(pages=pages),
         )
+
+
+def test_extract_sections_allows_missing_positions_when_optional() -> None:
+    """Transition statements may intentionally omit account positions."""
+    text = StatementText(
+        pages=(
+            StatementPage(
+                number=1,
+                text="Portfolio Summary",
+            ),
+            StatementPage(
+                number=2,
+                text="Account Activity",
+            ),
+        ),
+    )
+
+    sections = extract_sections(
+        text,
+        require_positions=False,
+    )
+
+    assert sections.summary == (
+        StatementPage(
+            number=1,
+            text="Portfolio Summary",
+        ),
+    )
+    assert sections.positions == ()
+    assert sections.activity == (
+        StatementPage(
+            number=2,
+            text="Account Activity",
+        ),
+    )
+    assert sections.pending == ()

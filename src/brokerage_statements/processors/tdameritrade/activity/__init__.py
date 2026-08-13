@@ -42,6 +42,7 @@ from .transfers import (
     is_known_internal_security_transfer,
     parse_security_transfer,
 )
+from .transition_transfers import parse_transition_security_transfer
 
 if TYPE_CHECKING:
     from brokerage_statements.processors.tdameritrade.sections import (
@@ -78,6 +79,7 @@ _ROW_PARSERS: tuple[RowParser, ...] = (
     parse_reorganization_fee,
     parse_cash_in_lieu,
     parse_option_expiration,
+    parse_transition_security_transfer,
     parse_security_transfer,
     parse_expense,
     parse_income,
