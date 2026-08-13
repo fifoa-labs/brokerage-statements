@@ -53,3 +53,7 @@ class StatementParseError(BrokerageStatementsError):
 
 class UnknownActivityError(StatementParseError):
     """Raised when statement activity cannot be normalized safely."""
+
+
+class UnresolvedSecurityError(StatementParseError):
+    """Raised when a statement security identifier cannot be resolved."""

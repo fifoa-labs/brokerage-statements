@@ -27,6 +27,7 @@ from brokerage_statements.domain import (
     TradeStatus,
 )
 from brokerage_statements.exceptions import UnknownActivityError
+from brokerage_statements.reference import resolve_symbol
 
 if TYPE_CHECKING:
     from .sections import StatementSections
@@ -84,7 +85,7 @@ _INTERNAL_JOURNAL_PATTERN = re.compile(
 )
 
 _TRADE_VALUES_PATTERN = re.compile(
-    r"\b(?P<symbol>[A-Z][A-Z0-9.-]*)\s+"
+    r"\b(?P<identifier>[A-Z0-9][A-Z0-9.-]*)\s+"
     r"(?P<quantity>[\d,]+(?:\.\d+)?)-?\s+"
     r"\$?\s*(?P<price>[\d,]+(?:\.\d+)?)\s+"
     r"\$?\s*(?P<amount>\(?[\d,]+(?:\.\d+)?\)?)\s+"
@@ -92,7 +93,7 @@ _TRADE_VALUES_PATTERN = re.compile(
 )
 
 _SECURITY_TRANSFER_VALUES_PATTERN = re.compile(
-    r"\b(?P<symbol>[A-Z][A-Z0-9.-]*)\s+"
+    r"\b(?P<identifier>[A-Z0-9][A-Z0-9.-]*)\s+"
     r"(?P<quantity>[\d,]+(?:\.\d+)?)-?\s+"
     r"\$?\s*0\.00\b",
 )
@@ -283,7 +284,9 @@ def _parse_trade(
             match.group("trade_date"),
         ),
         security=SymbolSecurity(
-            values.group("symbol"),
+            resolve_symbol(
+                values.group("identifier"),
+            )
         ),
         side=side,
         status=TradeStatus.SETTLED,
@@ -384,7 +387,9 @@ def _parse_security_transfer(
             match.group("settle_date"),
         ),
         security=SymbolSecurity(
-            values.group("symbol"),
+            resolve_symbol(
+                values.group("identifier"),
+            )
         ),
         direction=direction,
         quantity=_parse_unsigned_decimal(

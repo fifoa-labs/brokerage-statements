@@ -17,6 +17,7 @@ from brokerage_statements.exceptions import (
     StatementParseError,
     StatementSourceError,
     UnknownActivityError,
+    UnresolvedSecurityError,
     UnsupportedBrokerError,
     UnsupportedStatementError,
 )
@@ -121,3 +122,12 @@ def test_invalid_processor_result_error_inheritance() -> None:
 
     assert isinstance(error, BrokerageStatementsError)
     assert str(error) == "invalid processor result"
+
+
+def test_unresolved_security_error_inheritance() -> None:
+    """Unresolved securities should be statement parsing errors."""
+    error = UnresolvedSecurityError("unresolved security")
+
+    assert isinstance(error, StatementParseError)
+    assert isinstance(error, BrokerageStatementsError)
+    assert str(error) == "unresolved security"

@@ -27,7 +27,10 @@ from brokerage_statements.domain import (
     TradeSide,
     TradeStatus,
 )
-from brokerage_statements.exceptions import UnknownActivityError
+from brokerage_statements.exceptions import (
+    UnknownActivityError,
+    UnresolvedSecurityError,
+)
 from brokerage_statements.processors.tdameritrade.activity import (
     parse_activity,
 )
@@ -527,3 +530,114 @@ def test_parse_activity_rejects_malformed_income() -> None:
         match="Unable to parse TD Ameritrade income row",
     ):
         parse_page(f"Account Activity\n{row}")
+
+
+def test_parse_activity_resolves_uso_cusip() -> None:
+    """USO trades should resolve TD's reverse-split CUSIP annotation."""
+    events = parse_page(
+        "\n".join(  # noqa: FLY002
+            (
+                "Account Activity",
+                (
+                    "04/02/20 04/06/20 Cash Sell - Securities Sold "
+                    "UNITED STATES OIL FUND LP 91232N108 "
+                    "1,000- 4.86 4,859.77 4,859.77"
+                ),
+                "1:8 R/S 4/29/20 91232N207",
+                "Regulatory Fee 0.23",
+            )
+        )
+    )
+
+    assert len(events) == 2
+
+    trade = events[0]
+    fee = events[1]
+
+    assert isinstance(trade, TradeEvent)
+    assert isinstance(fee, FeeEvent)
+
+    assert symbol_of(trade.security) == "USO"
+    assert trade.side is TradeSide.SELL
+    assert trade.quantity == Decimal("1000")
+    assert trade.price == Decimal("4.86")
+    assert trade.amount == Decimal("4859.77")
+
+    raw_text = trade.evidence[0].raw_text
+
+    assert raw_text is not None
+    assert "91232N108" in raw_text
+    assert "1:8 R/S 4/29/20 91232N207" in raw_text
+
+    assert fee.amount == Decimal("0.23")
+
+
+def test_parse_activity_resolves_uso_cusip_on_buy() -> None:
+    """CUSIP resolution should work for purchases as well as sales."""
+    events = parse_page(
+        "\n".join(  # noqa: FLY002
+            (
+                "Account Activity",
+                (
+                    "04/22/20 04/24/20 Cash Buy - Securities Purchased "
+                    "UNITED STATES OIL FUND LP 91232N108 "
+                    "1,500 2.89 (4,335.00) (4,335.00)"
+                ),
+                "1:8 R/S 4/29/20 91232N207",
+            )
+        )
+    )
+
+    assert len(events) == 1
+
+    trade = events[0]
+
+    assert isinstance(trade, TradeEvent)
+    assert symbol_of(trade.security) == "USO"
+    assert trade.side is TradeSide.BUY
+    assert trade.quantity == Decimal("1500")
+    assert trade.price == Decimal("2.89")
+    assert trade.amount == Decimal("4335.00")
+
+
+def test_parse_activity_resolves_jnug_cusip() -> None:
+    """JNUG reverse-split CUSIPs should resolve to the ticker."""
+    events = parse_page(
+        "\n".join(  # noqa: FLY002
+            (
+                "Account Activity",
+                (
+                    "04/06/20 04/08/20 Cash Sell - Securities Sold "
+                    "DIREXION SHARES ETF TRUST 25460E166 "
+                    "1,000- 5.10 5,099.77 5,099.77"
+                ),
+                "1:10 R/S 4/23/20 25460G831",
+                "Regulatory Fee 0.23",
+            )
+        )
+    )
+
+    assert len(events) == 2
+
+    trade = events[0]
+
+    assert isinstance(trade, TradeEvent)
+    assert symbol_of(trade.security) == "JNUG"
+    assert trade.quantity == Decimal("1000")
+
+
+def test_parse_activity_rejects_unknown_cusip() -> None:
+    """Unknown security identifiers should fail explicitly."""
+    row = (
+        "04/02/20 04/06/20 Cash Sell - Securities Sold "
+        "UNKNOWN SECURITY 12345A678 "
+        "100- 10.00 1,000.00 1,000.00"
+    )
+
+    with pytest.raises(
+        UnresolvedSecurityError,
+        match="Unresolved security identifier",
+    ):
+        parse_page(
+            f"Account Activity\n{row}",
+        )
