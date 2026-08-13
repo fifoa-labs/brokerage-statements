@@ -6,11 +6,14 @@ Tests for TD Ameritrade account-activity orchestration.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from brokerage_statements.domain import (
     CashTransferEvent,
     IncomeEvent,
+    OptionExpirationEvent,
     OptionSecurity,
     TradeEvent,
 )
@@ -142,6 +145,37 @@ def test_parse_activity_dispatches_option_before_equity_trade() -> None:
 
     assert isinstance(trade, TradeEvent)
     assert isinstance(trade.security, OptionSecurity)
+
+
+def test_parse_activity_dispatches_expiration_before_security_transfer() -> (
+    None
+):
+    """Option expirations should be handled before generic transfers."""
+    events = parse_page(
+        "Account Activity\n"
+        "09/21/20 09/21/20 Cash Delivered - Other "
+        "PROSHARES TRUST II - 20- 0.00 - 0.00\n"
+        "UVXY Sep 18 20 30.0 C EXPIRATION"
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert isinstance(event, OptionExpirationEvent)
+    assert event.contracts == Decimal("20")
+
+
+def test_parse_activity_consumes_known_internal_row() -> None:
+    """Known consumed rows should produce no normalized event."""
+    events = parse_page(
+        "Account Activity\n"
+        "03/17/20 03/17/20 Cash Journal - Other "
+        "MOVE CASH BALANCE TO MARGIN "
+        "- - 0.00 (2,000.00) 0.00"
+    )
+
+    assert events == ()
 
 
 def test_parse_activity_allows_no_rows() -> None:

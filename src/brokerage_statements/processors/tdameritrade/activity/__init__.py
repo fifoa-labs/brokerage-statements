@@ -6,6 +6,7 @@ Account-activity orchestration for TD Ameritrade monthly statements.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from brokerage_statements.domain import (
@@ -13,6 +14,7 @@ from brokerage_statements.domain import (
     CorporateActionEvent,
     FeeEvent,
     IncomeEvent,
+    OptionExpirationEvent,
     SecurityTransferEvent,
     SourceEvidence,
     StatementSource,
@@ -31,6 +33,7 @@ from .corporate_actions import (
     parse_reorganization_fee,
 )
 from .income import parse_income
+from .option_expirations import parse_option_expiration
 from .options import parse_option_trade
 from .rows import extract_activity_rows
 from .trades import parse_trade
@@ -51,6 +54,31 @@ ActivityEvent = (
     | FeeEvent
     | SecurityTransferEvent
     | CorporateActionEvent
+    | OptionExpirationEvent
+)
+
+RowConsumer = Callable[[str], bool]
+RowParser = Callable[
+    [str, SourceEvidence],
+    tuple[ActivityEvent, ...] | ActivityEvent | None,
+]
+
+_ROW_CONSUMERS: tuple[RowConsumer, ...] = (
+    is_known_internal_journal,
+    is_reverse_split_delivery,
+    is_reverse_split_receipt,
+    is_known_internal_security_transfer,
+)
+
+_ROW_PARSERS: tuple[RowParser, ...] = (
+    parse_option_trade,
+    parse_trade,
+    parse_cash_transfer,
+    parse_reorganization_fee,
+    parse_cash_in_lieu,
+    parse_option_expiration,
+    parse_security_transfer,
+    parse_income,
 )
 
 
@@ -64,20 +92,20 @@ def parse_activity(
     events: list[ActivityEvent] = []
 
     for row in extract_activity_rows(sections):
-        parsed = _parse_row(
-            source=source,
-            page_number=row.page_number,
-            row=row.text,
-            processor_name=processor_name,
-            sequence=row.sequence,
+        events.extend(
+            _parse_row(
+                source=source,
+                page_number=row.page_number,
+                row=row.text,
+                processor_name=processor_name,
+                sequence=row.sequence,
+            )
         )
-
-        events.extend(parsed)
 
     return tuple(events)
 
 
-def _parse_row(  # noqa: C901, PLR0911
+def _parse_row(
     *,
     source: StatementSource,
     page_number: int,
@@ -86,18 +114,7 @@ def _parse_row(  # noqa: C901, PLR0911
     sequence: int,
 ) -> tuple[ActivityEvent, ...]:
     """Parse one logical TD Ameritrade activity row."""
-    if is_known_internal_journal(row):
-        return ()
-
-    # Reverse-split delivery and receipt rows are components of a
-    # corporate action, not external security transfers.
-    if is_reverse_split_delivery(row):
-        return ()
-
-    if is_reverse_split_receipt(row):
-        return ()
-
-    if is_known_internal_security_transfer(row):
+    if _is_consumed_row(row):
         return ()
 
     evidence = SourceEvidence(
@@ -109,64 +126,43 @@ def _parse_row(  # noqa: C901, PLR0911
         sequence=sequence,
     )
 
-    option_trade = parse_option_trade(
+    parsed = _dispatch_row(
         row,
         evidence,
     )
 
-    if option_trade is not None:
-        return option_trade
-
-    trade = parse_trade(
-        row,
-        evidence,
-    )
-
-    if trade is not None:
-        return trade
-
-    cash_transfer = parse_cash_transfer(
-        row,
-        evidence,
-    )
-
-    if cash_transfer is not None:
-        return (cash_transfer,)
-
-    reorganization_fee = parse_reorganization_fee(
-        row,
-        evidence,
-    )
-
-    if reorganization_fee is not None:
-        return (reorganization_fee,)
-
-    cash_in_lieu = parse_cash_in_lieu(
-        row,
-        evidence,
-    )
-
-    if cash_in_lieu is not None:
-        return (cash_in_lieu,)
-
-    security_transfer = parse_security_transfer(
-        row,
-        evidence,
-    )
-
-    if security_transfer is not None:
-        return (security_transfer,)
-
-    income = parse_income(
-        row,
-        evidence,
-    )
-
-    if income is not None:
-        return (income,)
+    if parsed is not None:
+        return parsed
 
     msg = f"Unknown TD Ameritrade account activity: {row}"
     raise UnknownActivityError(msg)
+
+
+def _is_consumed_row(row: str) -> bool:
+    """Return whether a known row should produce no normalized event."""
+    return any(consumer(row) for consumer in _ROW_CONSUMERS)
+
+
+def _dispatch_row(
+    row: str,
+    evidence: SourceEvidence,
+) -> tuple[ActivityEvent, ...] | None:
+    """Dispatch a logical row to the first compatible activity parser."""
+    for parser in _ROW_PARSERS:
+        parsed = parser(
+            row,
+            evidence,
+        )
+
+        if parsed is None:
+            continue
+
+        if isinstance(parsed, tuple):
+            return parsed
+
+        return (parsed,)
+
+    return None
 
 
 __all__ = [
