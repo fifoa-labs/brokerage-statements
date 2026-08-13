@@ -39,6 +39,8 @@ def test_resolve_symbol_preserves_symbol_identity(
         ("98420U703", "XSPA"),
         ("Y73760301", "SHIP"),
         ("Y73760194", "SHIP"),
+        ("74347Y839", "UVXY"),
+        ("74347Y771", "UVXY"),
     ],
 )
 def test_resolve_symbol_resolves_known_cusip(
