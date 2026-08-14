@@ -75,6 +75,7 @@ class CorporateActionType(StrEnum):
     REORGANIZATION = "reorganization"
     BANKRUPTCY = "bankruptcy"
     WORTHLESS_SECURITY = "worthless_security"
+    POSITION_ADJUSTMENT = "position_adjustment"
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +121,10 @@ class CashTransferEvent:
     def __post_init__(self) -> None:
         """Validate cash transfer values."""
         _require_evidence(self.evidence)
-        _require_positive(self.amount, "cash transfer amount")
+        _require_positive(
+            self.amount,
+            "cash transfer amount",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +139,10 @@ class IncomeEvent:
     def __post_init__(self) -> None:
         """Validate income values."""
         _require_evidence(self.evidence)
-        _require_positive(self.amount, "income amount")
+        _require_positive(
+            self.amount,
+            "income amount",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,7 +157,10 @@ class FeeEvent:
     def __post_init__(self) -> None:
         """Validate fee values."""
         _require_evidence(self.evidence)
-        _require_positive(self.amount, "fee amount")
+        _require_positive(
+            self.amount,
+            "fee amount",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,7 +271,10 @@ def _require_positive(
     name: str,
 ) -> None:
     """Require a finite decimal value greater than zero."""
-    _require_finite(value, name)
+    _require_finite(
+        value,
+        name,
+    )
 
     if value <= 0:
         msg = f"{name} must be greater than zero."
@@ -273,7 +286,10 @@ def _require_non_negative(
     name: str,
 ) -> None:
     """Require a finite decimal value greater than or equal to zero."""
-    _require_finite(value, name)
+    _require_finite(
+        value,
+        name,
+    )
 
     if value < 0:
         msg = f"{name} must not be negative."

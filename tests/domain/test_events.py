@@ -166,7 +166,10 @@ def test_trade_event_rejects_non_finite_values(
     }
     values[field] = value
 
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(
+        ValueError,
+        match=match,
+    ):
         TradeEvent(
             date=date(2026, 1, 15),
             security=SymbolSecurity("AAPL"),
@@ -486,6 +489,26 @@ def test_corporate_action_event_preserves_values(
     assert event.cash == Decimal("0.24")
 
 
+def test_corporate_action_event_allows_position_adjustment(
+    evidence: SourceEvidence,
+) -> None:
+    """Position adjustments should preserve explicit quantity removal."""
+    event = CorporateActionEvent(
+        date=date(2025, 1, 13),
+        action_type=CorporateActionType.POSITION_ADJUSTMENT,
+        source_security=SymbolSecurity("PHMB"),
+        quantity_before=Decimal("2000000.0000"),
+        quantity_after=Decimal("0"),
+        evidence=(evidence,),
+    )
+
+    assert event.action_type is CorporateActionType.POSITION_ADJUSTMENT
+    assert event.source_security == SymbolSecurity("PHMB")
+    assert event.quantity_before == Decimal("2000000.0000")
+    assert event.quantity_after == Decimal("0")
+    assert event.cash is None
+
+
 def test_corporate_action_preserves_multiple_evidence_rows(
     evidence: SourceEvidence,
 ) -> None:
@@ -507,7 +530,10 @@ def test_corporate_action_preserves_multiple_evidence_rows(
         evidence=(evidence, second),
     )
 
-    assert event.evidence == (evidence, second)
+    assert event.evidence == (
+        evidence,
+        second,
+    )
 
 
 @pytest.mark.parametrize(
@@ -540,7 +566,10 @@ def test_corporate_action_event_rejects_non_finite_values(
     }
     values[field] = Decimal("NaN")
 
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(
+        ValueError,
+        match=match,
+    ):
         CorporateActionEvent(
             date=date(2026, 1, 10),
             action_type=CorporateActionType.REVERSE_SPLIT,
