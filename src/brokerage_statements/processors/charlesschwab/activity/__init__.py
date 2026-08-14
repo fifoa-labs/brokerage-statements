@@ -95,10 +95,12 @@ def _parse_grouped_corporate_action(
 
     first = rows[0]
 
-    if first.category != "Other Activity":
-        return None
+    is_reverse_split = (
+        first.category == "Other Activity" and "ReverseSplit " in first.text
+    )
+    is_redemption = first.category == "Redemption"
 
-    if "ReverseSplit " not in first.text:
+    if not is_reverse_split and not is_redemption:
         return None
 
     evidence = tuple(

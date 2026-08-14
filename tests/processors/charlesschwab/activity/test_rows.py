@@ -509,3 +509,30 @@ def test_extract_activity_rows_preserves_other_description_before_activity() -> 
         "WARRANTS EXP 06/30/28 "
         "110.0000 4.7600 523.60"
     )
+
+
+def test_extract_activity_rows_preserves_redemption_category() -> None:
+    """Cash-in-lieu redemption should become one logical activity row."""
+    page = StatementPage(
+        number=4,
+        text=(
+            "Transaction Details\n"
+            "10/16 Redemption Cash-In-Lieu UAVS "
+            "AGEAGLEAERIALSYSTEMSI 0.24\n"
+            "TotalTransactions $0.24"
+        ),
+    )
+
+    rows = extract_activity_rows(
+        make_sections(page),
+    )
+
+    assert len(rows) == 1
+
+    row = rows[0]
+
+    assert row.date == "10/16"
+    assert row.category == "Redemption"
+    assert row.text == (
+        "10/16 Redemption Cash-In-Lieu UAVS AGEAGLEAERIALSYSTEMSI 0.24"
+    )

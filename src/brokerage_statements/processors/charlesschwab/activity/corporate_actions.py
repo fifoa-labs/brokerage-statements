@@ -40,6 +40,17 @@ _REVERSE_SPLIT_REMOVAL_PATTERN = re.compile(
     r"(?:\s+REVERSESPLIT)?$"
 )
 
+_REVERSE_SPLIT_REMOVAL_SYMBOLS = {
+    "AGEAGLEAERIALSYSINXXX": "UAVS",
+}
+
+_CASH_IN_LIEU_PATTERN = re.compile(
+    r"^Cash-In-Lieu\s+"
+    r"(?P<symbol>[A-Z][A-Z0-9.-]*)\s+"
+    r"(?P<description>.+?)\s+"
+    r"(?P<amount>[\d,]+(?:\.\d+)?)$"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class CorporateActionMatch:
@@ -55,45 +66,70 @@ def parse_corporate_action(
     *,
     year: int,
 ) -> CorporateActionMatch | None:
-    """Parse a grouped Charles Schwab corporate action."""
+    """Parse a supported Charles Schwab corporate action."""
     if not rows:
         return None
 
     first = rows[0]
 
+    if first.category == "Redemption":
+        return _parse_cash_in_lieu(
+            first,
+            evidence=evidence[:1],
+            year=year,
+        )
+
     if first.category != "Other Activity":
         return None
 
-    first_body = _activity_body(first)
+    body = _activity_body(first)
 
-    if not first_body.startswith("ReverseSplit "):
+    if not body.startswith("ReverseSplit "):
         return None
+
+    receipt_match = _REVERSE_SPLIT_RECEIPT_PATTERN.match(body)
+
+    if receipt_match is not None:
+        return _parse_paired_reverse_split(
+            rows,
+            receipt_match=receipt_match,
+            evidence=evidence,
+            year=year,
+        )
+
+    removal_match = _REVERSE_SPLIT_REMOVAL_PATTERN.match(body)
+
+    if removal_match is not None:
+        return _parse_removal_only_reverse_split(
+            first,
+            removal_match=removal_match,
+            evidence=evidence[:1],
+            year=year,
+        )
+
+    msg = f"Unable to parse Charles Schwab reverse split row: {first.text}"
+    raise UnknownActivityError(msg)
+
+
+def _parse_paired_reverse_split(
+    rows: tuple[ActivityRow, ...],
+    *,
+    receipt_match: re.Match[str],
+    evidence: tuple[SourceEvidence, ...],
+    year: int,
+) -> CorporateActionMatch:
+    """Parse Schwab receipt/removal reverse-split rows."""
+    receipt = rows[0]
 
     if len(rows) < 2:  # noqa: PLR2004
         msg = (
             "Charles Schwab reverse split is missing its paired row: "
-            f"{first.text}"
+            f"{receipt.text}"
         )
         raise UnknownActivityError(msg)
 
-    second = rows[1]
+    removal = rows[1]
 
-    return _parse_reverse_split(
-        first,
-        second,
-        evidence=evidence,
-        year=year,
-    )
-
-
-def _parse_reverse_split(
-    receipt: ActivityRow,
-    removal: ActivityRow,
-    *,
-    evidence: tuple[SourceEvidence, ...],
-    year: int,
-) -> CorporateActionMatch:
-    """Parse paired Schwab reverse-split receipt and removal rows."""
     if removal.date != receipt.date:
         msg = (
             "Charles Schwab reverse split rows have different dates: "
@@ -108,26 +144,16 @@ def _parse_reverse_split(
         )
         raise UnknownActivityError(msg)
 
-    receipt_match = _REVERSE_SPLIT_RECEIPT_PATTERN.match(
-        _activity_body(receipt),
-    )
     removal_match = _REVERSE_SPLIT_REMOVAL_PATTERN.match(
         _activity_body(removal),
     )
 
-    if receipt_match is None or removal_match is None:
+    if removal_match is None:
         msg = (
             "Unable to parse Charles Schwab reverse split rows: "
             f"{receipt.text} | {removal.text}"
         )
         raise UnknownActivityError(msg)
-
-    quantity_after = parse_unsigned_decimal(
-        receipt_match.group("quantity"),
-    )
-    quantity_before = parse_unsigned_decimal(
-        removal_match.group("quantity"),
-    )
 
     return CorporateActionMatch(
         event=CorporateActionEvent(
@@ -139,11 +165,84 @@ def _parse_reverse_split(
             source_security=SymbolSecurity(
                 receipt_match.group("symbol"),
             ),
-            quantity_before=quantity_before,
-            quantity_after=quantity_after,
-            evidence=evidence,
+            quantity_before=parse_unsigned_decimal(
+                removal_match.group("quantity"),
+            ),
+            quantity_after=parse_unsigned_decimal(
+                receipt_match.group("quantity"),
+            ),
+            evidence=evidence[:2],
         ),
         consumed_rows=2,
+    )
+
+
+def _parse_removal_only_reverse_split(
+    row: ActivityRow,
+    *,
+    removal_match: re.Match[str],
+    evidence: tuple[SourceEvidence, ...],
+    year: int,
+) -> CorporateActionMatch:
+    """Parse a reverse split reporting only removed whole shares."""
+    description = removal_match.group("description")
+
+    try:
+        symbol = _REVERSE_SPLIT_REMOVAL_SYMBOLS[description]
+    except KeyError as exc:
+        msg = (
+            "Unknown Charles Schwab reverse split security description: "
+            f"{description}"
+        )
+        raise UnknownActivityError(msg) from exc
+
+    return CorporateActionMatch(
+        event=CorporateActionEvent(
+            date=parse_activity_date(
+                row.date,
+                year=year,
+            ),
+            action_type=CorporateActionType.REVERSE_SPLIT,
+            source_security=SymbolSecurity(symbol),
+            quantity_before=parse_unsigned_decimal(
+                removal_match.group("quantity"),
+            ),
+            quantity_after=None,
+            evidence=evidence,
+        ),
+        consumed_rows=1,
+    )
+
+
+def _parse_cash_in_lieu(
+    row: ActivityRow,
+    *,
+    evidence: tuple[SourceEvidence, ...],
+    year: int,
+) -> CorporateActionMatch | None:
+    """Parse Schwab cash paid instead of a fractional security."""
+    body = _activity_body(row)
+    match = _CASH_IN_LIEU_PATTERN.match(body)
+
+    if match is None:
+        return None
+
+    return CorporateActionMatch(
+        event=CorporateActionEvent(
+            date=parse_activity_date(
+                row.date,
+                year=year,
+            ),
+            action_type=CorporateActionType.CASH_IN_LIEU,
+            source_security=SymbolSecurity(
+                match.group("symbol"),
+            ),
+            cash=parse_unsigned_decimal(
+                match.group("amount"),
+            ),
+            evidence=evidence,
+        ),
+        consumed_rows=1,
     )
 
 

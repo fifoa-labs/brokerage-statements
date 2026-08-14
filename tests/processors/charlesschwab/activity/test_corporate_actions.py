@@ -240,3 +240,99 @@ def test_parse_activity_preserves_reverse_split_and_interest_order() -> None:
         2,
         3,
     ]
+
+
+def test_parse_activity_preserves_terminal_reverse_split_cash_in_lieu() -> (
+    None
+):
+    """Terminal reverse split and cash-in-lieu should remain
+    separate events.
+    """
+    events = parse_rows(
+        "Transaction Details\n"
+        "10/15 Other ReverseSplit "
+        "AGEAGLEAERIALSYSINXXX (5.0000)\n"
+        "Activity REVERSESPLIT\n"
+        "10/16 Redemption Cash-In-Lieu UAVS "
+        "AGEAGLEAERIALSYSTEMSI 0.24\n"
+        "TotalTransactions $0.24",
+        year=2024,
+    )
+
+    assert len(events) == 2
+
+    reverse_split = events[0]
+    cash_in_lieu = events[1]
+
+    assert isinstance(reverse_split, CorporateActionEvent)
+    assert reverse_split.date == date(2024, 10, 15)
+    assert reverse_split.action_type is CorporateActionType.REVERSE_SPLIT
+    assert reverse_split.source_security == SymbolSecurity("UAVS")
+    assert reverse_split.quantity_before == Decimal("5.0000")
+    assert reverse_split.quantity_after is None
+    assert reverse_split.cash is None
+
+    assert isinstance(cash_in_lieu, CorporateActionEvent)
+    assert cash_in_lieu.date == date(2024, 10, 16)
+    assert cash_in_lieu.action_type is CorporateActionType.CASH_IN_LIEU
+    assert cash_in_lieu.source_security == SymbolSecurity("UAVS")
+    assert cash_in_lieu.quantity_before is None
+    assert cash_in_lieu.quantity_after is None
+    assert cash_in_lieu.cash == Decimal("0.24")
+
+    assert reverse_split.evidence[0].sequence == 1
+    assert cash_in_lieu.evidence[0].sequence == 2
+
+
+def test_parse_activity_rejects_unknown_removal_only_reverse_split_security() -> (  # noqa: E501
+    None
+):
+    """Removal-only reverse splits must resolve to a known security."""
+    with pytest.raises(
+        UnknownActivityError,
+        match="Unknown Charles Schwab reverse split security description",
+    ):
+        parse_rows(
+            "Transaction Details\n"
+            "10/15 Other ReverseSplit "
+            "UNKNOWNSECURITYXXX (5.0000)\n"
+            "Activity REVERSESPLIT\n"
+            "TotalTransactions $0.00",
+            year=2024,
+        )
+
+
+def test_parse_activity_rejects_unrecognized_reverse_split_shape() -> None:
+    """Recognized reverse-split activity should require supported grammar."""
+    with pytest.raises(
+        UnknownActivityError,
+        match="Unable to parse Charles Schwab reverse split row",
+    ):
+        parse_rows(
+            "Transaction Details\n"
+            "10/15 Other ReverseSplit BROKEN\n"
+            "Activity\n"
+            "TotalTransactions $0.00",
+            year=2024,
+        )
+
+
+def test_parse_corporate_action_ignores_non_cash_in_lieu_redemption() -> None:
+    """Unsupported redemption rows should remain unclaimed."""
+    row = ActivityRow(
+        page_number=4,
+        sequence=1,
+        date="10/16",
+        category="Redemption",
+        text=(
+            "10/16 Redemption MysteryAction UAVS AGEAGLEAERIALSYSTEMSI 0.24"
+        ),
+    )
+
+    result = parse_corporate_action(
+        (row,),
+        make_evidence(row),
+        year=2024,
+    )
+
+    assert result is None

@@ -37,6 +37,7 @@ _CATEGORY_PREFIXES = (
     "Dividend",
     "Interest",
     "Fee",
+    "Redemption",
     "Other",
 )
 
