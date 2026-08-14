@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from brokerage_statements.domain import (
     CashTransferEvent,
+    CorporateActionEvent,
     IncomeEvent,
     SecurityTransferEvent,
     SourceEvidence,
@@ -18,6 +19,10 @@ from brokerage_statements.domain import (
 from brokerage_statements.exceptions import UnknownActivityError
 
 from .cash import parse_cash_transfer
+from .corporate_actions import (
+    CorporateActionMatch,
+    parse_corporate_action,
+)
 from .income import parse_income
 from .rows import (
     ActivityRow,
@@ -31,7 +36,12 @@ if TYPE_CHECKING:
     )
 
 
-ActivityEvent = CashTransferEvent | IncomeEvent | SecurityTransferEvent
+ActivityEvent = (
+    CashTransferEvent
+    | CorporateActionEvent
+    | IncomeEvent
+    | SecurityTransferEvent
+)
 
 
 def parse_activity(
@@ -42,19 +52,72 @@ def parse_activity(
     year: int,
 ) -> tuple[ActivityEvent, ...]:
     """Parse normalized economic events from Schwab activity."""
+    rows = extract_activity_rows(sections)
     events: list[ActivityEvent] = []
+    index = 0
 
-    for row in extract_activity_rows(sections):
-        events.append(  # noqa: PERF401
+    while index < len(rows):
+        corporate_action = _parse_grouped_corporate_action(
+            source=source,
+            rows=rows[index:],
+            processor_name=processor_name,
+            year=year,
+        )
+
+        if corporate_action is not None:
+            events.append(corporate_action.event)
+            index += corporate_action.consumed_rows
+            continue
+
+        events.append(
             _parse_row(
                 source=source,
-                row=row,
+                row=rows[index],
                 processor_name=processor_name,
                 year=year,
             )
         )
+        index += 1
 
     return tuple(events)
+
+
+def _parse_grouped_corporate_action(
+    *,
+    source: StatementSource,
+    rows: tuple[ActivityRow, ...],
+    processor_name: str,
+    year: int,
+) -> CorporateActionMatch | None:
+    """Parse a corporate action spanning consecutive logical rows."""
+    if not rows:
+        return None
+
+    first = rows[0]
+
+    if first.category != "Other Activity":
+        return None
+
+    if "ReverseSplit " not in first.text:
+        return None
+
+    evidence = tuple(
+        SourceEvidence(
+            source=source,
+            page=row.page_number,
+            section="Transaction Details",
+            raw_text=row.text,
+            processor=processor_name,
+            sequence=row.sequence,
+        )
+        for row in rows[:2]
+    )
+
+    return parse_corporate_action(
+        rows,
+        evidence,
+        year=year,
+    )
 
 
 def _parse_row(

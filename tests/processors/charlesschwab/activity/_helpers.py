@@ -56,6 +56,8 @@ def make_sections(
 
 def parse_rows(
     text: str,
+    *,
+    year: int = 2023,
 ) -> tuple[ActivityEvent, ...]:
     """Parse one synthetic Schwab transaction-detail page."""
     page = StatementPage(
@@ -67,5 +69,5 @@ def parse_rows(
         make_source(),
         make_sections(page),
         processor_name=PROCESSOR_NAME,
-        year=2023,
+        year=year,
     )
