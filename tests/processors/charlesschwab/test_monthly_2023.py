@@ -114,25 +114,15 @@ def test_processor_rejects_missing_structure() -> None:
     assert "Transactions - Summary" in match.reason
 
 
-def test_parse_reaches_section_boundary() -> None:
-    """Parsing should stop explicitly after proven identity parsing."""
-    with pytest.raises(
-        NotImplementedError,
-        match="Charles Schwab monthly activity parsing is not implemented",
-    ):
-        Monthly2023Processor().parse(
-            make_source(),
-            make_supported_text(),
-        )
-
-
-def test_parse_reaches_activity_boundary() -> None:
-    """Parsing should stop explicitly after proven position parsing."""
+def test_parse_reaches_activity_normalization_boundary() -> None:
+    """Parsing should stop after proven logical activity-row extraction."""
     processor = Monthly2023Processor()
 
     with pytest.raises(
         NotImplementedError,
-        match=("Charles Schwab monthly activity parsing is not implemented"),
+        match=(
+            "Charles Schwab monthly activity normalization is not implemented"
+        ),
     ):
         processor.parse(
             make_source(),

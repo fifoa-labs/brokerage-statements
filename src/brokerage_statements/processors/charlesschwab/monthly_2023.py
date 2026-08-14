@@ -15,6 +15,7 @@ from brokerage_statements.domain import (
 )
 from brokerage_statements.processors.base import ProcessorMatch
 
+from .activity import extract_activity_rows
 from .identity import parse_statement_identity
 from .positions import parse_positions
 from .sections import extract_sections
@@ -85,6 +86,9 @@ class Monthly2023Processor:
             sections,
             processor_name=self.name,
         )
+        extract_activity_rows(sections)
 
-        msg = "Charles Schwab monthly activity parsing is not implemented."
+        msg = (
+            "Charles Schwab monthly activity normalization is not implemented."
+        )
         raise NotImplementedError(msg)
