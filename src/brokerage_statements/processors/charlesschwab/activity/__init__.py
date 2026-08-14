@@ -1,14 +1,127 @@
 """
 src/brokerage_statements/processors/charlesschwab/activity/__init__.py
 
-Charles Schwab account-activity parsing.
+Account-activity orchestration for Charles Schwab monthly statements.
 """
 
 from __future__ import annotations
 
-from .rows import ActivityRow, extract_activity_rows
+from typing import TYPE_CHECKING
+
+from brokerage_statements.domain import (
+    CashTransferEvent,
+    IncomeEvent,
+    SecurityTransferEvent,
+    SourceEvidence,
+    StatementSource,
+)
+from brokerage_statements.exceptions import UnknownActivityError
+
+from .cash import parse_cash_transfer
+from .income import parse_income
+from .rows import (
+    ActivityRow,
+    extract_activity_rows,
+)
+from .transfers import parse_security_transfer
+
+if TYPE_CHECKING:
+    from brokerage_statements.processors.charlesschwab.sections import (
+        StatementSections,
+    )
+
+
+ActivityEvent = CashTransferEvent | IncomeEvent | SecurityTransferEvent
+
+
+def parse_activity(
+    source: StatementSource,
+    sections: StatementSections,
+    *,
+    processor_name: str,
+    year: int,
+) -> tuple[ActivityEvent, ...]:
+    """Parse normalized economic events from Schwab activity."""
+    events: list[ActivityEvent] = []
+
+    for row in extract_activity_rows(sections):
+        events.append(  # noqa: PERF401
+            _parse_row(
+                source=source,
+                row=row,
+                processor_name=processor_name,
+                year=year,
+            )
+        )
+
+    return tuple(events)
+
+
+def _parse_row(
+    *,
+    source: StatementSource,
+    row: ActivityRow,
+    processor_name: str,
+    year: int,
+) -> ActivityEvent:
+    """Parse exactly one logical Charles Schwab activity row."""
+    evidence = SourceEvidence(
+        source=source,
+        page=row.page_number,
+        section="Transaction Details",
+        raw_text=row.text,
+        processor=processor_name,
+        sequence=row.sequence,
+    )
+
+    event = _dispatch_row(
+        row,
+        evidence,
+        year=year,
+    )
+
+    if event is not None:
+        return event
+
+    msg = f"Unknown Charles Schwab account activity: {row.text}"
+    raise UnknownActivityError(msg)
+
+
+def _dispatch_row(
+    row: ActivityRow,
+    evidence: SourceEvidence,
+    *,
+    year: int,
+) -> ActivityEvent | None:
+    """Dispatch a row to the first compatible focused parser."""
+    cash = parse_cash_transfer(
+        row,
+        evidence,
+        year=year,
+    )
+
+    if cash is not None:
+        return cash
+
+    transfer = parse_security_transfer(
+        row,
+        evidence,
+        year=year,
+    )
+
+    if transfer is not None:
+        return transfer
+
+    return parse_income(
+        row,
+        evidence,
+        year=year,
+    )
+
 
 __all__ = [
+    "ActivityEvent",
     "ActivityRow",
     "extract_activity_rows",
+    "parse_activity",
 ]

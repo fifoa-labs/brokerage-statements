@@ -11,11 +11,12 @@ from typing import TYPE_CHECKING
 from brokerage_statements.domain import (
     Broker,
     ParsedStatement,
+    StatementPeriod,
     StatementSource,
 )
 from brokerage_statements.processors.base import ProcessorMatch
 
-from .activity import extract_activity_rows
+from .activity import parse_activity
 from .identity import parse_statement_identity
 from .positions import parse_positions
 from .sections import extract_sections
@@ -78,17 +79,31 @@ class Monthly2023Processor:
         text: StatementText,
     ) -> ParsedStatement:
         """Parse a Charles Schwab monthly statement."""
-        parse_statement_identity(text)
+        identity = parse_statement_identity(text)
         sections = extract_sections(text)
 
-        parse_positions(
+        positions = parse_positions(
             source,
             sections,
             processor_name=self.name,
         )
-        extract_activity_rows(sections)
-
-        msg = (
-            "Charles Schwab monthly activity normalization is not implemented."
+        events = parse_activity(
+            source,
+            sections,
+            processor_name=self.name,
+            year=identity.end.year,
         )
-        raise NotImplementedError(msg)
+
+        return ParsedStatement(
+            source=source,
+            broker=self.broker,
+            processor_name=self.name,
+            account_id=identity.account_id,
+            currency="USD",
+            period=StatementPeriod(
+                start=identity.start,
+                end=identity.end,
+            ),
+            events=events,
+            positions=positions,
+        )

@@ -6,12 +6,12 @@ Tests for the Charles Schwab monthly 2023 processor.
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
-
-import pytest
 
 from brokerage_statements.domain import (
     Broker,
+    StatementPeriod,
     StatementSource,
 )
 from brokerage_statements.processors.charlesschwab import (
@@ -57,6 +57,16 @@ def make_supported_text() -> StatementText:
                     "90.00 10.00 N/A 0.00 10%\n"
                     "Total Equities $100.00\n"
                     "Transactions - Summary"
+                ),
+            ),
+            StatementPage(
+                number=4,
+                text=(
+                    "Transaction Details\n"
+                    "11/29 Interest CreditInterest "
+                    "SCHWAB1INT10/30-11/28 0.23\n"
+                    "TotalTransactions $0.23\n"
+                    "Terms and Conditions"
                 ),
             ),
         ),
@@ -114,17 +124,20 @@ def test_processor_rejects_missing_structure() -> None:
     assert "Transactions - Summary" in match.reason
 
 
-def test_parse_reaches_activity_normalization_boundary() -> None:
-    """Parsing should stop after proven logical activity-row extraction."""
-    processor = Monthly2023Processor()
+def test_parse_returns_normalized_statement() -> None:
+    """Supported Schwab text should produce a parsed statement."""
+    statement = Monthly2023Processor().parse(
+        make_source(),
+        make_supported_text(),
+    )
 
-    with pytest.raises(
-        NotImplementedError,
-        match=(
-            "Charles Schwab monthly activity normalization is not implemented"
-        ),
-    ):
-        processor.parse(
-            make_source(),
-            make_supported_text(),
-        )
+    assert statement.broker is Broker.CHARLES_SCHWAB
+    assert statement.processor_name == "charlesschwab.monthly_2023"
+    assert statement.account_id == "1234-5678"
+    assert statement.period == StatementPeriod(
+        start=date(2023, 11, 1),
+        end=date(2023, 11, 30),
+    )
+
+    assert len(statement.positions) == 1
+    assert len(statement.events) == 1
