@@ -78,8 +78,8 @@ def test_parse_corporate_action_ignores_non_other_activity() -> None:
     )
 
 
-def test_parse_corporate_action_ignores_non_reverse_split() -> None:
-    """Other Activity rows need reverse-split grammar."""
+def test_parse_corporate_action_ignores_non_corporate_other_activity() -> None:
+    """Unrelated Other Activity rows should remain unclaimed."""
     row = ActivityRow(
         page_number=4,
         sequence=1,
@@ -96,37 +96,6 @@ def test_parse_corporate_action_ignores_non_reverse_split() -> None:
         )
         is None
     )
-
-
-def test_parse_activity_rejects_reverse_split_wrong_paired_category() -> None:
-    """Reverse-split paired row must remain Other Activity."""
-    first = ActivityRow(
-        page_number=4,
-        sequence=1,
-        date="02/09",
-        category="Other Activity",
-        text=(
-            "02/09 Other Activity ReverseSplit UAVS "
-            "AGEAGLEAERIALSYSTEMSI 5.0000"
-        ),
-    )
-    second = ActivityRow(
-        page_number=4,
-        sequence=2,
-        date="02/09",
-        category="Interest",
-        text="02/09 Interest BROKEN",
-    )
-
-    with pytest.raises(
-        UnknownActivityError,
-        match="reverse split has unexpected paired row",
-    ):
-        parse_corporate_action(
-            (first, second),
-            make_evidence(first, second),
-            year=2024,
-        )
 
 
 def test_parse_activity_preserves_reverse_split() -> None:
@@ -154,6 +123,7 @@ def test_parse_activity_preserves_reverse_split() -> None:
     assert event.target_security is None
     assert event.quantity_before == Decimal("100.0000")
     assert event.quantity_after == Decimal("5.0000")
+    assert event.cash is None
 
     assert len(event.evidence) == 2
     assert event.evidence[0].sequence == 1
@@ -195,6 +165,40 @@ def test_parse_activity_rejects_reverse_split_date_mismatch() -> None:
         )
 
 
+def test_parse_activity_rejects_reverse_split_wrong_paired_category() -> None:
+    """Reverse-split paired row must remain Other Activity."""
+    first = ActivityRow(
+        page_number=4,
+        sequence=1,
+        date="02/09",
+        category="Other Activity",
+        text=(
+            "02/09 Other Activity ReverseSplit UAVS "
+            "AGEAGLEAERIALSYSTEMSI 5.0000"
+        ),
+    )
+    second = ActivityRow(
+        page_number=4,
+        sequence=2,
+        date="02/09",
+        category="Interest",
+        text="02/09 Interest BROKEN",
+    )
+
+    with pytest.raises(
+        UnknownActivityError,
+        match="reverse split has unexpected paired row",
+    ):
+        parse_corporate_action(
+            (first, second),
+            make_evidence(
+                first,
+                second,
+            ),
+            year=2024,
+        )
+
+
 def test_parse_activity_rejects_malformed_reverse_split_pair() -> None:
     """Recognized reverse splits should require supported row grammar."""
     with pytest.raises(
@@ -207,6 +211,21 @@ def test_parse_activity_rejects_malformed_reverse_split_pair() -> None:
             "AGEAGLEAERIALSYSTEMSI 5.0000\n"
             "Activity\n"
             "Other ReverseSplit BROKEN REMOVAL\n"
+            "Activity\n"
+            "TotalTransactions $0.00",
+            year=2024,
+        )
+
+
+def test_parse_activity_rejects_unrecognized_reverse_split_shape() -> None:
+    """Recognized reverse-split activity should require supported grammar."""
+    with pytest.raises(
+        UnknownActivityError,
+        match="Unable to parse Charles Schwab reverse split row",
+    ):
+        parse_rows(
+            "Transaction Details\n"
+            "10/15 Other ReverseSplit BROKEN\n"
             "Activity\n"
             "TotalTransactions $0.00",
             year=2024,
@@ -302,21 +321,6 @@ def test_parse_activity_rejects_unknown_removal_only_reverse_split_security() ->
         )
 
 
-def test_parse_activity_rejects_unrecognized_reverse_split_shape() -> None:
-    """Recognized reverse-split activity should require supported grammar."""
-    with pytest.raises(
-        UnknownActivityError,
-        match="Unable to parse Charles Schwab reverse split row",
-    ):
-        parse_rows(
-            "Transaction Details\n"
-            "10/15 Other ReverseSplit BROKEN\n"
-            "Activity\n"
-            "TotalTransactions $0.00",
-            year=2024,
-        )
-
-
 def test_parse_corporate_action_ignores_non_cash_in_lieu_redemption() -> None:
     """Unsupported redemption rows should remain unclaimed."""
     row = ActivityRow(
@@ -336,3 +340,62 @@ def test_parse_corporate_action_ignores_non_cash_in_lieu_redemption() -> None:
     )
 
     assert result is None
+
+
+def test_parse_activity_preserves_position_adjustment() -> None:
+    """Complete position removal should remain an explicit adjustment."""
+    events = parse_rows(
+        "Transaction Details\n"
+        "01/13 Other AdjustPosition PHMB "
+        "PHARMACOMBIOVETINC (2,000,000.0000) 0.00\n"
+        "Activity\n"
+        "TotalTransactions $0.00",
+        year=2025,
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+
+    assert isinstance(event, CorporateActionEvent)
+    assert event.date == date(2025, 1, 13)
+    assert event.action_type is CorporateActionType.POSITION_ADJUSTMENT
+    assert event.source_security == SymbolSecurity("PHMB")
+    assert event.target_security is None
+    assert event.quantity_before == Decimal("2000000.0000")
+    assert event.quantity_after == Decimal("0")
+    assert event.cash is None
+
+    assert len(event.evidence) == 1
+    assert event.evidence[0].sequence == 1
+
+
+def test_parse_activity_rejects_malformed_position_adjustment() -> None:
+    """Position adjustments should require supported Schwab grammar."""
+    with pytest.raises(
+        UnknownActivityError,
+        match="Unable to parse Charles Schwab position adjustment row",
+    ):
+        parse_rows(
+            "Transaction Details\n"
+            "01/13 Other AdjustPosition PHMB BROKEN\n"
+            "Activity\n"
+            "TotalTransactions $0.00",
+            year=2025,
+        )
+
+
+def test_parse_activity_rejects_position_adjustment_with_cash() -> None:
+    """Unexpected cash should not be hidden inside a position adjustment."""
+    with pytest.raises(
+        UnknownActivityError,
+        match="position adjustment has unexpected cash amount",
+    ):
+        parse_rows(
+            "Transaction Details\n"
+            "01/13 Other AdjustPosition PHMB "
+            "PHARMACOMBIOVETINC (2,000,000.0000) 10.00\n"
+            "Activity\n"
+            "TotalTransactions $10.00",
+            year=2025,
+        )

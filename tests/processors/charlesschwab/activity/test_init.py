@@ -48,7 +48,7 @@ def test_parse_activity_preserves_event_order() -> None:
     ]
 
 
-def test_parse_activity_preserves_grouped_corporate_action_order() -> None:
+def test_parse_activity_preserves_paired_reverse_split_order() -> None:
     """Grouped corporate actions should consume their paired rows once."""
     events = parse_rows(
         "Transaction Details\n"
@@ -107,3 +107,28 @@ def test_grouped_corporate_action_ignores_empty_rows() -> None:
     )
 
     assert result is None
+
+
+def test_parse_activity_preserves_position_adjustment_order() -> None:
+    """Position adjustments should participate in normal event ordering."""
+    events = parse_rows(
+        "Transaction Details\n"
+        "01/13 Other AdjustPosition PHMB "
+        "PHARMACOMBIOVETINC (2,000,000.0000) 0.00\n"
+        "Activity\n"
+        "01/30 Interest CreditInterest "
+        "SCHWAB1INT12/30-01/29 0.10\n"
+        "TotalTransactions $0.10",
+        year=2025,
+    )
+
+    assert len(events) == 2
+    assert isinstance(events[0], CorporateActionEvent)
+    assert isinstance(events[1], IncomeEvent)
+
+    assert [
+        evidence.sequence for event in events for evidence in event.evidence
+    ] == [
+        1,
+        2,
+    ]

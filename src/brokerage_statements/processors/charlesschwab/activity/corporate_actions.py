@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from brokerage_statements.domain import (
@@ -26,6 +27,7 @@ from ._utils import (
 if TYPE_CHECKING:
     from .rows import ActivityRow
 
+
 _REVERSE_SPLIT_RECEIPT_PATTERN = re.compile(
     r"^ReverseSplit\s+"
     r"(?P<symbol>[A-Z][A-Z0-9.-]*)\s+"
@@ -40,16 +42,24 @@ _REVERSE_SPLIT_REMOVAL_PATTERN = re.compile(
     r"(?:\s+REVERSESPLIT)?$"
 )
 
-_REVERSE_SPLIT_REMOVAL_SYMBOLS = {
-    "AGEAGLEAERIALSYSINXXX": "UAVS",
-}
-
 _CASH_IN_LIEU_PATTERN = re.compile(
     r"^Cash-In-Lieu\s+"
     r"(?P<symbol>[A-Z][A-Z0-9.-]*)\s+"
     r"(?P<description>.+?)\s+"
     r"(?P<amount>[\d,]+(?:\.\d+)?)$"
 )
+
+_ADJUST_POSITION_PATTERN = re.compile(
+    r"^AdjustPosition\s+"
+    r"(?P<symbol>[A-Z][A-Z0-9.-]*)\s+"
+    r"(?P<description>.+?)\s+"
+    r"\((?P<quantity>[\d,]+(?:\.\d+)?)\)\s+"
+    r"(?P<amount>[\d,]+(?:\.\d+)?)$"
+)
+
+_REVERSE_SPLIT_REMOVAL_SYMBOLS = {
+    "AGEAGLEAERIALSYSINXXX": "UAVS",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +70,7 @@ class CorporateActionMatch:
     consumed_rows: int
 
 
-def parse_corporate_action(
+def parse_corporate_action(  # noqa: PLR0911
     rows: tuple[ActivityRow, ...],
     evidence: tuple[SourceEvidence, ...],
     *,
@@ -84,10 +94,19 @@ def parse_corporate_action(
 
     body = _activity_body(first)
 
+    if body.startswith("AdjustPosition "):
+        return _parse_position_adjustment(
+            first,
+            evidence=evidence[:1],
+            year=year,
+        )
+
     if not body.startswith("ReverseSplit "):
         return None
 
-    receipt_match = _REVERSE_SPLIT_RECEIPT_PATTERN.match(body)
+    receipt_match = _REVERSE_SPLIT_RECEIPT_PATTERN.match(
+        body,
+    )
 
     if receipt_match is not None:
         return _parse_paired_reverse_split(
@@ -97,7 +116,9 @@ def parse_corporate_action(
             year=year,
         )
 
-    removal_match = _REVERSE_SPLIT_REMOVAL_PATTERN.match(body)
+    removal_match = _REVERSE_SPLIT_REMOVAL_PATTERN.match(
+        body,
+    )
 
     if removal_match is not None:
         return _parse_removal_only_reverse_split(
@@ -203,7 +224,9 @@ def _parse_removal_only_reverse_split(
                 year=year,
             ),
             action_type=CorporateActionType.REVERSE_SPLIT,
-            source_security=SymbolSecurity(symbol),
+            source_security=SymbolSecurity(
+                symbol,
+            ),
             quantity_before=parse_unsigned_decimal(
                 removal_match.group("quantity"),
             ),
@@ -221,8 +244,9 @@ def _parse_cash_in_lieu(
     year: int,
 ) -> CorporateActionMatch | None:
     """Parse Schwab cash paid instead of a fractional security."""
-    body = _activity_body(row)
-    match = _CASH_IN_LIEU_PATTERN.match(body)
+    match = _CASH_IN_LIEU_PATTERN.match(
+        _activity_body(row),
+    )
 
     if match is None:
         return None
@@ -240,6 +264,55 @@ def _parse_cash_in_lieu(
             cash=parse_unsigned_decimal(
                 match.group("amount"),
             ),
+            evidence=evidence,
+        ),
+        consumed_rows=1,
+    )
+
+
+def _parse_position_adjustment(
+    row: ActivityRow,
+    *,
+    evidence: tuple[SourceEvidence, ...],
+    year: int,
+) -> CorporateActionMatch:
+    """Parse a Schwab position-removal adjustment."""
+    match = _ADJUST_POSITION_PATTERN.match(
+        _activity_body(row),
+    )
+
+    if match is None:
+        msg = (
+            "Unable to parse Charles Schwab position adjustment row: "
+            f"{row.text}"
+        )
+        raise UnknownActivityError(msg)
+
+    amount = parse_unsigned_decimal(
+        match.group("amount"),
+    )
+
+    if amount != Decimal("0"):
+        msg = (
+            "Charles Schwab position adjustment has unexpected "
+            f"cash amount {amount}: {row.text}"
+        )
+        raise UnknownActivityError(msg)
+
+    return CorporateActionMatch(
+        event=CorporateActionEvent(
+            date=parse_activity_date(
+                row.date,
+                year=year,
+            ),
+            action_type=CorporateActionType.POSITION_ADJUSTMENT,
+            source_security=SymbolSecurity(
+                match.group("symbol"),
+            ),
+            quantity_before=parse_unsigned_decimal(
+                match.group("quantity"),
+            ),
+            quantity_after=Decimal("0"),
             evidence=evidence,
         ),
         consumed_rows=1,

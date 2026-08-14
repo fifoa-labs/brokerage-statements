@@ -89,7 +89,7 @@ def _parse_grouped_corporate_action(
     processor_name: str,
     year: int,
 ) -> CorporateActionMatch | None:
-    """Parse a corporate action spanning consecutive logical rows."""
+    """Parse a corporate action spanning one or more logical rows."""
     if not rows:
         return None
 
@@ -98,9 +98,16 @@ def _parse_grouped_corporate_action(
     is_reverse_split = (
         first.category == "Other Activity" and "ReverseSplit " in first.text
     )
+    is_position_adjustment = (
+        first.category == "Other Activity" and "AdjustPosition " in first.text
+    )
     is_redemption = first.category == "Redemption"
 
-    if not is_reverse_split and not is_redemption:
+    if (
+        not is_reverse_split
+        and not is_position_adjustment
+        and not is_redemption
+    ):
         return None
 
     evidence = tuple(
