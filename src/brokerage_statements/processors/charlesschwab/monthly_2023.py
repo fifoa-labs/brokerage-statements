@@ -15,6 +15,10 @@ from brokerage_statements.domain import (
 )
 from brokerage_statements.processors.base import ProcessorMatch
 
+from .identity import parse_statement_identity
+from .positions import parse_positions
+from .sections import extract_sections
+
 if TYPE_CHECKING:
     from brokerage_statements.text import StatementText
 
@@ -25,7 +29,7 @@ _REQUIRED_MARKERS = (
     "Schwab One® Account of",
     "Account Summary",
     "Positions - Summary",
-    "Transaction Details",
+    "Transactions - Summary",
 )
 
 
@@ -73,4 +77,14 @@ class Monthly2023Processor:
         text: StatementText,
     ) -> ParsedStatement:
         """Parse a Charles Schwab monthly statement."""
-        raise NotImplementedError
+        parse_statement_identity(text)
+        sections = extract_sections(text)
+
+        parse_positions(
+            source,
+            sections,
+            processor_name=self.name,
+        )
+
+        msg = "Charles Schwab monthly activity parsing is not implemented."
+        raise NotImplementedError(msg)
